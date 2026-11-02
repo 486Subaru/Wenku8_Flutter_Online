@@ -20,6 +20,7 @@ import android.widget.Toast
 class Wenku8LoginActivity : Activity() {
     private lateinit var browser: WebView
     private lateinit var status: TextView
+    private var blockedNavigationHost: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -87,22 +88,72 @@ class Wenku8LoginActivity : Activity() {
                     view: WebView?,
                     request: WebResourceRequest?,
                 ): Boolean {
-                    val target = request?.url?.toString() ?: return false
-                    if (Wenku8UrlPolicy.isOfficialPage(target)) return false
+                    val uri = request?.url ?: return false
+                    val target = uri.toString()
+                    if (Wenku8UrlPolicy.isOfficialPage(target) ||
+                        Wenku8UrlPolicy.isAllowedChallengeUrl(target)
+                    ) return false
+
+                    // The site still contains some HTTP links. Upgrade those
+                    // exact official-host URLs instead of allowing cleartext.
+                    val upgraded = Wenku8UrlPolicy.httpsUpgradeOfficialPage(target)
+                    if (upgraded != null) {
+                        view?.loadUrl(upgraded)
+                        return true
+                    }
+
+                    // Third-party subframes are blocked quietly. The one
+                    // required Cloudflare verification origin is allowlisted
+                    // above, so analytics/ads cannot repeatedly toast over login.
+                    if (!request.isForMainFrame) return true
+
+                    val host = uri.host ?: uri.scheme ?: "未知地址"
+                    blockedNavigationHost = host
+                    status.text = "已拦截站外跳转（" + host + "）。为保护账号，仅允许文库官网及其验证页面。"
                     Toast.makeText(
                         this@Wenku8LoginActivity,
-                        "为保护账号，只允许打开文库官网页面",
+                        "为保护账号，已拦截非文库页面：" + host,
                         Toast.LENGTH_SHORT,
                     ).show()
                     return true
                 }
 
+                override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                    super.onPageStarted(view, url, favicon)
+                    blockedNavigationHost = null
+                }
+
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
-                    status.text = if (Wenku8SessionCookies.hasSession()) {
-                        "已检测到官网登录状态，点击右上角“完成登录”返回应用。"
-                    } else {
-                        "请在官网页面点击登录或注册；如出现网站验证，请按页面提示完成。"
+                    status.text = when {
+                        Wenku8SessionCookies.hasSession() ->
+                            "已检测到官网登录状态，点击右上角“完成登录”返回应用。"
+                        blockedNavigationHost != null ->
+                            "已拦截站外跳转（" + blockedNavigationHost + "）。请返回文库官网继续登录。"
+                        else ->
+                            "请在官网页面点击登录或注册；如出现网站验证，请按页面提示完成。"
+                    }
+                }
+
+                override fun onReceivedError(
+                    view: WebView?,
+                    request: WebResourceRequest?,
+                    error: android.webkit.WebResourceError?,
+                ) {
+                    super.onReceivedError(view, request, error)
+                    if (request?.isForMainFrame == true) {
+                        status.text = "文库页面加载失败（" + (error?.errorCode ?: "未知") + "）。请检查网络后重试。"
+                    }
+                }
+
+                override fun onReceivedHttpError(
+                    view: WebView?,
+                    request: WebResourceRequest?,
+                    errorResponse: android.webkit.WebResourceResponse?,
+                ) {
+                    super.onReceivedHttpError(view, request, errorResponse)
+                    if (request?.isForMainFrame == true) {
+                        status.text = "文库官网返回 HTTP " + (errorResponse?.statusCode ?: "错误") + "。请稍后重试。"
                     }
                 }
             }

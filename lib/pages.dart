@@ -41,7 +41,6 @@ import 'book_source_badge.dart';
 import 'book_source_settings_page.dart';
 import 'book_sources.dart';
 import 'book_search.dart';
-import 'online_component.dart';
 import 'blocked_tags_controls.dart';
 import 'catalog.dart';
 import 'glass_dock.dart';

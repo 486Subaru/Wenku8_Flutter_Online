@@ -409,8 +409,10 @@ class OfflineNovelRepository extends FrameChangeNotifier
         saved.genre == novel.genre &&
         saved.coverUrl == novel.coverUrl &&
         saved.sourceId == novel.sourceId &&
+        saved.sourceName == novel.sourceName &&
         saved.sourceUrl == novel.sourceUrl &&
         saved.sourceBaseUrl == novel.sourceBaseUrl &&
+        saved.sourceImageHosts.join(',') == novel.sourceImageHosts.join(',') &&
         saved.isComplete == novel.isComplete &&
         saved.lastUpdate == novel.lastUpdate &&
         _sameDirectory(saved.chapters, novel.chapters)) {

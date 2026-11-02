@@ -962,8 +962,10 @@ class BookSourceRepository {
     if (input == null) return null;
     final resolved = source.baseUri.resolveUri(input);
     final base = source.baseUri;
-    final hostAllowed =
-        resolved.host == base.host || source.imageHosts.contains(resolved.host);
+    final hostAllowed = resolved.host == base.host ||
+        source.imageHosts.any(
+          (host) => resolved.host == host || resolved.host.endsWith('.$host'),
+        );
     if (resolved.scheme != 'https' ||
         !hostAllowed ||
         resolved.userInfo.isNotEmpty ||

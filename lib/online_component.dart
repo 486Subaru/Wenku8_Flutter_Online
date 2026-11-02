@@ -20,3 +20,10 @@ class OnlineChallengeRequired implements Exception {
 
 Future<T> unavailableOnline<T>() =>
     Future<T>.error(const OnlineComponentUnavailable());
+
+class BookSourceAuthenticationRequired implements Exception {
+  const BookSourceAuthenticationRequired([this.message = '请先完成该书源网站的独立登录']);
+  final String message;
+  @override
+  String toString() => message;
+}

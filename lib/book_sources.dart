@@ -11,18 +11,21 @@ import 'legacy_transport.dart';
 typedef BookSourceTextRequest = Future<String> Function(
   String url, {
   required String baseUrl,
+  required List<String> requestHosts,
 });
 
 typedef BookSourceJsonRequest = Future<String> Function(
   String url, {
   required String baseUrl,
   required String body,
+  required List<String> requestHosts,
 });
 
 typedef BookSourceLightNovelSearchRequest = Future<String> Function(
   String query, {
   required String baseUrl,
   required int page,
+  required List<String> requestHosts,
 });
 
 class BookSourceConfig {
@@ -39,6 +42,8 @@ class BookSourceConfig {
     this.enabled = true,
     this.loginUrl = '',
     this.loginHosts = const [],
+    this.requestHosts = const [],
+    this.browseUrlTemplate = '',
     this.searchLinkSelector = '',
     this.searchNextPageSelector = '',
     this.searchAuthorSelector = '',
@@ -67,6 +72,8 @@ class BookSourceConfig {
   final bool enabled;
   final String loginUrl;
   final List<String> loginHosts;
+  final List<String> requestHosts;
+  final String browseUrlTemplate;
   final String searchUrlTemplate;
   final String searchItemSelector;
   final String searchTitleSelector;
@@ -107,6 +114,8 @@ class BookSourceConfig {
     engine: engine,
     loginUrl: loginUrl,
     loginHosts: loginHosts,
+    requestHosts: requestHosts,
+    browseUrlTemplate: browseUrlTemplate,
     searchUrlTemplate: searchUrlTemplate,
     searchItemSelector: searchItemSelector,
     searchTitleSelector: searchTitleSelector,
@@ -154,7 +163,7 @@ class BookSourceConfig {
     if (loginUrl.trim().isNotEmpty) {
       final login = uri.resolve(loginUrl.trim());
       if (login.scheme != 'https' ||
-          login.host != uri.host ||
+          (login.host != uri.host && !loginHosts.contains(login.host.toLowerCase())) ||
           login.port != uri.port ||
           login.userInfo.isNotEmpty ||
           login.hasFragment) {
@@ -173,6 +182,21 @@ class BookSourceConfig {
           host.contains('..')) {
         throw FormatException('登录跳转域名无效：$host；只填写主机名，不要填写协议、端口或通配符');
       }
+    }
+    if (requestHosts.length > 12) {
+      throw const FormatException('请求/API 域名最多允许配置 12 个');
+    }
+    for (final host in requestHosts) {
+      if (host != host.trim().toLowerCase() ||
+          !validLoginHost.hasMatch(host) ||
+          host.contains('..')) {
+        throw FormatException('请求/API 域名无效：$host；只填写主机名，不要填写协议、端口或通配符');
+      }
+    }
+    if (browseUrlTemplate.length > 2048 ||
+        (browseUrlTemplate.trim().isNotEmpty &&
+            !browseUrlTemplate.contains('{page}'))) {
+      throw const FormatException('首页/发现地址模板必须包含 {page}，且不能超过 2048 个字符');
     }
     if (!const {'css', 'lightnovel_fun', 'web_login_only'}.contains(engine)) {
       throw const FormatException('不支持的书源解析引擎');
@@ -254,6 +278,8 @@ class BookSourceConfig {
     'enabled': enabled,
     'loginUrl': loginUrl,
     'loginHosts': loginHosts,
+    'requestHosts': requestHosts,
+    'browseUrlTemplate': browseUrlTemplate,
     'searchUrlTemplate': searchUrlTemplate,
     'searchItemSelector': searchItemSelector,
     'searchTitleSelector': searchTitleSelector,
@@ -297,6 +323,14 @@ class BookSourceConfig {
                 .where((host) => host.isNotEmpty)
                 .toList(growable: false)
           : const [],
+      requestHosts: value['requestHosts'] is List
+          ? (value['requestHosts'] as List)
+                .whereType<String>()
+                .map((host) => host.trim().toLowerCase())
+                .where((host) => host.isNotEmpty)
+                .toList(growable: false)
+          : const [],
+      browseUrlTemplate: string('browseUrlTemplate'),
       searchUrlTemplate: string('searchUrlTemplate'),
       searchItemSelector: string('searchItemSelector'),
       searchTitleSelector: string('searchTitleSelector'),
@@ -361,6 +395,7 @@ class BookSourceStore extends ChangeNotifier {
       engine: 'lightnovel_fun',
       loginUrl: '/',
       loginHosts: ['lightnovel.fun'],
+      requestHosts: ['lightnovel.fun'],
       searchUrlTemplate: '',
       searchItemSelector: '',
       searchTitleSelector: '',
@@ -556,7 +591,7 @@ class BookSourceStore extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    var migratedLoginHosts = false;
+    var migratedSourceHosts = false;
     try {
       final decoded = jsonDecode(raw);
       if (decoded is! List || decoded.length > 20) {
@@ -566,12 +601,19 @@ class BookSourceStore extends ChangeNotifier {
         if (item is! Map<String, dynamic>) continue;
         final config = Map<String, dynamic>.from(item);
         if (config['id'] == 'lightnovel-fun') {
-          final savedHosts = config['loginHosts'] is List
+          final savedLoginHosts = config['loginHosts'] is List
               ? (config['loginHosts'] as List).whereType<String>().toList()
               : <String>[];
-          if (!savedHosts.map((host) => host.toLowerCase()).contains('lightnovel.fun')) {
-            config['loginHosts'] = [...savedHosts, 'lightnovel.fun'];
-            migratedLoginHosts = true;
+          if (!savedLoginHosts.map((host) => host.toLowerCase()).contains('lightnovel.fun')) {
+            config['loginHosts'] = [...savedLoginHosts, 'lightnovel.fun'];
+            migratedSourceHosts = true;
+          }
+          final savedRequestHosts = config['requestHosts'] is List
+              ? (config['requestHosts'] as List).whereType<String>().toList()
+              : <String>[];
+          if (!savedRequestHosts.map((host) => host.toLowerCase()).contains('lightnovel.fun')) {
+            config['requestHosts'] = [...savedRequestHosts, 'lightnovel.fun'];
+            migratedSourceHosts = true;
           }
         }
         final source = BookSourceConfig.fromJson(config);
@@ -583,7 +625,7 @@ class BookSourceStore extends ChangeNotifier {
       _sources.clear();
       throw const FormatException('书源配置损坏，请重新导入配置');
     }
-    if (migratedLoginHosts) {
+    if (migratedSourceHosts) {
       await preferences.setString(
         preferenceKey,
         jsonEncode(_sources.map((source) => source.toJson()).toList()),
@@ -675,7 +717,7 @@ class BookSourceRepository {
   Future<String> _fetch(String url) async {
     final uri = _resolvePage(url);
     if (uri == null) throw const FormatException('书源链接超出了配置的网站域名');
-    return _request(uri.toString(), baseUrl: source.baseUrl);
+    return _request(uri.toString(), baseUrl: source.baseUrl, requestHosts: source.requestHosts);
   }
 
   Future<NovelPage> search(
@@ -694,7 +736,30 @@ class BookSourceRepository {
         .replaceAll('{keyword}', Uri.encodeQueryComponent(keyword))
         .replaceAll('{page}', page.toString())
         .replaceAll('{field}', field == 'author' ? 'author' : 'title');
-    final html = await _fetch(source.baseUri.resolve(url).toString());
+    return _parseCssSearch(
+      await _fetch(source.baseUri.resolve(url).toString()),
+      page,
+    );
+  }
+
+  Future<NovelPage> browse({int page = 1}) async {
+    _requireReaderSupport();
+    if (page < 1 || page > 10000) {
+      throw ArgumentError.value(page, 'page');
+    }
+    if (source.engine == 'lightnovel_fun') {
+      return _searchLightNovel('', page: page);
+    }
+    final template = source.browseUrlTemplate.trim();
+    if (template.isEmpty) return search('', page: page);
+    final url = template.replaceAll('{page}', page.toString());
+    return _parseCssSearch(
+      await _fetch(source.baseUri.resolve(url).toString()),
+      page,
+    );
+  }
+
+  NovelPage _parseCssSearch(String html, int page) {
     final document = parse(html);
     final rows = document.querySelectorAll(source.searchItemSelector);
     final books = <Novel>[];
@@ -707,33 +772,27 @@ class BookSourceRepository {
       final href = linkNode?.attributes['href'] ?? '';
       final bookUrl = _resolvePage(href);
       if (bookUrl == null) continue;
-      final id = _stableId('${source.id}|$bookUrl', 0x40000000);
+      final id = _stableId('${source.id}|${bookUrl}', 0x40000000);
       if (!seen.add(id)) continue;
       final author = _text(row, source.searchAuthorSelector);
       final summary = _text(row, source.searchSummarySelector);
       final genre = _text(row, source.searchGenreSelector);
-      final cover = _attribute(
-        row,
-        source.searchCoverSelector,
-        source.searchCoverAttribute,
-      );
+      final cover = _attribute(row, source.searchCoverSelector, source.searchCoverAttribute);
       final coverUrl = _resolveImage(cover);
-      books.add(
-        Novel(
-          id: id,
-          title: title,
-          author: author,
-          genre: genre,
-          summary: summary,
-          colors: _colors(id),
-          coverUrl: coverUrl?.toString(),
-          sourceId: source.id,
-          sourceName: source.name,
-          sourceUrl: bookUrl.toString(),
-          sourceBaseUrl: source.baseUrl,
-          sourceImageHosts: source.imageHosts,
-        ),
-      );
+      books.add(Novel(
+        id: id,
+        title: title,
+        author: author,
+        genre: genre,
+        summary: summary,
+        colors: _colors(id),
+        coverUrl: coverUrl?.toString(),
+        sourceId: source.id,
+        sourceName: source.name,
+        sourceUrl: bookUrl.toString(),
+        sourceBaseUrl: source.baseUrl,
+        sourceImageHosts: source.imageHosts,
+      ));
     }
     final nextSelector = source.searchNextPageSelector.trim();
     final nextLink = nextSelector.isEmpty ? null : _query(document, nextSelector);
@@ -858,6 +917,7 @@ class BookSourceRepository {
       url.toString(),
       baseUrl: source.baseUrl,
       body: jsonEncode(body),
+      requestHosts: source.requestHosts,
     );
     final decoded = jsonDecode(raw);
     if (decoded is! Map<String, dynamic>) {
@@ -884,7 +944,7 @@ class BookSourceRepository {
   ) async {
     final result = <Map<String, dynamic>>[];
     final seen = <String>{};
-    for (var page = 1; page <= 20; page++) {
+    for (var page = 1; page <= 200; page++) {
       final data = await _lightNovelApi(path, {
         ...parameters,
         'page': page,
@@ -921,8 +981,9 @@ class BookSourceRepository {
   int? _lightNovelBookId(String? raw) {
     if (raw == null || raw.isEmpty) return null;
     final uri = Uri.tryParse(raw);
-    if (uri == null || uri.host != source.baseUri.host) return null;
-    final match = RegExp(r'/(?:book|reader)/(\d+)').firstMatch(uri.path);
+    if (uri == null ||
+        (uri.host != source.baseUri.host && !source.requestHosts.contains(uri.host.toLowerCase()))) return null;
+    final match = RegExp(r'/cn/(?:series|detail)/(\d+)').firstMatch(uri.path);
     return match == null ? null : int.tryParse(match.group(1)!);
   }
 
@@ -931,6 +992,7 @@ class BookSourceRepository {
       keyword,
       baseUrl: source.baseUrl,
       page: page,
+      requestHosts: source.requestHosts,
     );
     final decoded = jsonDecode(raw);
     if (decoded is! Map<String, dynamic>) {
@@ -958,7 +1020,8 @@ class BookSourceRepository {
         (row['title'] ?? row['name'] ?? row['series_name'] ?? '').toString(),
       );
       if (bookId <= 0 || title.isEmpty) continue;
-      final id = _stableId(source.id + '|' + bookId.toString(), 0x40000000);
+      final bookKind = seriesId > 0 || directId != null ? 'series' : 'article';
+      final id = _stableId(source.id + '|' + bookKind + '|' + bookId.toString(), 0x40000000);
       if (!seen.add(id)) continue;
       final cover = (row['cover'] ?? row['cover_url'] ?? '').toString();
       books.add(
@@ -972,13 +1035,27 @@ class BookSourceRepository {
           coverUrl: _resolveImage(cover)?.toString(),
           sourceId: source.id,
           sourceName: source.name,
-          sourceUrl: source.baseUri.resolve('/book/$bookId').toString(),
+          sourceUrl: source.baseUri.resolve(
+            bookKind == 'series' ? '/cn/series/$bookId' : '/cn/detail/$bookId',
+          ).toString(),
           sourceBaseUrl: source.baseUrl,
           sourceImageHosts: source.imageHosts,
         ),
       );
     }
-    return NovelPage(items: List.unmodifiable(books), page: page);
+    final pagination = data['pagination'] is Map
+        ? Map<String, dynamic>.from(data['pagination'] as Map)
+        : data['page_info'] is Map
+            ? Map<String, dynamic>.from(data['page_info'] as Map)
+            : <String, dynamic>{};
+    final totalPages = int.tryParse(
+      (pagination['page_count'] ?? pagination['pageCount'] ?? '').toString(),
+    );
+    return NovelPage(
+      items: List.unmodifiable(books),
+      page: page,
+      totalPages: totalPages != null && totalPages > 0 ? totalPages : null,
+    );
   }
 
   Future<Novel> _lightNovelDetail(Novel seed) async {
@@ -1031,6 +1108,19 @@ class BookSourceRepository {
   Future<List<NovelChapter>> _lightNovelChapters(Novel novel) async {
     final bookId = _lightNovelBookId(novel.sourceUrl);
     if (bookId == null) throw const FormatException('无法从轻之国度书籍链接识别书号');
+    if (novel.sourceUrl?.contains('/cn/detail/') == true) {
+      final articleId = _lightNovelBookId(novel.sourceUrl);
+      if (articleId == null) throw const FormatException('轻之国度文章链接无效');
+      return [
+        NovelChapter(
+          novel.title,
+          '',
+          id: _stableId(source.id + '|article|' + articleId.toString(), 0x20000000),
+          sourceId: source.id,
+          sourceUrl: source.baseUri.resolve('/cn/detail/$articleId?book_id=$articleId').toString(),
+        ),
+      ];
+    }
     final volumes = await _lightNovelPaged(
       'new-content-read/get-book-volumes',
       {'book_id': bookId},
@@ -1070,7 +1160,7 @@ class BookSourceRepository {
             volumeId: volumeStableId,
             volumeTitle: volumeTitle,
             sourceId: source.id,
-            sourceUrl: source.baseUri.resolve('/reader/$bookId/$chapterId').toString(),
+            sourceUrl: source.baseUri.resolve('/cn/detail/$chapterId?book_id=$bookId').toString(),
           ),
         );
         if (chapters.length >= 5000) break;
@@ -1085,12 +1175,14 @@ class BookSourceRepository {
     final url = Uri.tryParse(chapter.sourceUrl ?? '');
     final match = url == null
         ? null
-        : RegExp(r'/reader/(\d+)/(\d+)').firstMatch(url.path);
-    if (url == null || url.host != source.baseUri.host || match == null) {
+        : RegExp(r'/cn/detail/(\d+)').firstMatch(url.path);
+    if (url == null ||
+        (url.host != source.baseUri.host && !source.requestHosts.contains(url.host.toLowerCase())) ||
+        match == null) {
       throw const FormatException('轻之国度章节链接无效');
     }
-    final bookId = int.parse(match.group(1)!);
-    final chapterId = int.parse(match.group(2)!);
+    final chapterId = int.parse(match.group(1)!);
+    final bookId = int.tryParse(url.queryParameters['book_id'] ?? '') ?? chapterId;
     final data = await _lightNovelApi(
       'new-content-read/get-chapter-detail',
       {'book_id': bookId, 'chapter_id': chapterId},
@@ -1210,7 +1302,7 @@ class BookSourceRepository {
     final resolved = source.baseUri.resolveUri(input);
     final base = source.baseUri;
     if (resolved.scheme != 'https' ||
-        resolved.host != base.host ||
+        (resolved.host != base.host && !source.requestHosts.contains(resolved.host.toLowerCase())) ||
         resolved.port != base.port ||
         resolved.userInfo.isNotEmpty ||
         resolved.hasFragment) {

@@ -18,6 +18,14 @@ void main() {
       expect(missingPage.validate, throwsFormatException);
     });
 
+    test('rejects wildcard request hosts and accepts explicit login hosts', () {
+      expect(_config(requestHosts: const ['*.api.source.example']).validate, throwsFormatException);
+      expect(
+        _config(loginUrl: 'https://auth.source.example/login', loginHosts: const ['auth.source.example']).validate,
+        returnsNormally,
+      );
+    });
+
     test('rejects wildcard login redirect hosts', () {
       final config = _config(
         loginUrl: '/login',
@@ -30,6 +38,8 @@ void main() {
       final config = _config(
         loginUrl: '/login',
         loginHosts: const ['auth.source.example'],
+        requestHosts: const ['api.source.example'],
+        browseUrlTemplate: '/latest?page={page}',
         imageHosts: const ['cdn.source.example'],
       );
       final restored = BookSourceConfig.fromJson(Map<String, dynamic>.from(config.toJson()));
@@ -37,6 +47,8 @@ void main() {
       expect(restored.id, config.id);
       expect(restored.loginUrl, '/login');
       expect(restored.loginHosts, ['auth.source.example']);
+      expect(restored.requestHosts, ['api.source.example']);
+      expect(restored.browseUrlTemplate, '/latest?page={page}');
       expect(restored.imageHosts, ['cdn.source.example']);
     });
   });
@@ -59,6 +71,7 @@ void main() {
     final readerSource = await store.installPreset('lightnovel-fun');
     expect(readerSource.supportsReading, isTrue);
     expect(readerSource.loginHosts, contains('lightnovel.fun'));
+    expect(readerSource.requestHosts, contains('lightnovel.fun'));
     await store.setLoginSourceId(readerSource.id);
     expect(store.homepageSourceId, isNull);
 
@@ -218,8 +231,9 @@ void main() {
     };
     final repository = BookSourceRepository(
       config,
-      request: (url, {required baseUrl}) async {
+      request: (url, {required baseUrl, required requestHosts}) async {
         expect(baseUrl, config.baseUrl);
+        expect(requestHosts, config.requestHosts);
         requests.add(url);
         final response = responses[url];
         if (response == null) throw StateError('Unexpected URL: $url');
@@ -271,6 +285,7 @@ void main() {
       chapterItemSelector: '',
       chapterContentSelector: '',
       imageHosts: const ['lightnovel.fun'],
+      requestHosts: const ['lightnovel.fun'],
       enabled: false,
     );
     config.validate();
@@ -295,16 +310,22 @@ void main() {
         String query, {
         required String baseUrl,
         required int page,
+        required List<String> requestHosts,
       }) async {
-        expect(query, '示例');
         expect(baseUrl, config.baseUrl);
+        expect(requestHosts, config.requestHosts);
         expect(page, 1);
+        if (query.isEmpty) {
+          return '''{"code":0,"data":{"collections":[{"sid":124,"name":"首页推荐作品","author":"首页作者","cover":"https://cdn.lightnovel.fun/home.jpg"}],"articles":[]}}''';
+        }
+        expect(query, '示例');
         return '''
           {"code":0,"data":{"collections":[{"sid":123,"name":"示例轻小说","author":"测试作者","cover":"https://cdn.lightnovel.fun/cover.jpg","group_name":"轻小说"}],"articles":[]}}
         ''';
       },
-      jsonRequest: (url, {required baseUrl, required body}) async {
+      jsonRequest: (url, {required baseUrl, required body, required requestHosts}) async {
         expect(baseUrl, config.baseUrl);
+        expect(requestHosts, config.requestHosts);
         requests.add(Uri.parse(url).path);
         final response = responses[Uri.parse(url).path];
         if (response == null) throw StateError('Unexpected API: $url');
@@ -312,11 +333,15 @@ void main() {
       },
     );
 
+    final home = await repository.browse();
+    expect(home.items, hasLength(1));
+    expect(home.items.single.title, '首页推荐作品');
+
     final page = await repository.search('示例');
     expect(page.items, hasLength(1));
     final seed = page.items.single;
     expect(seed.title, '示例轻小说');
-    expect(seed.sourceUrl, 'https://www.lightnovel.fun/book/123');
+    expect(seed.sourceUrl, 'https://www.lightnovel.fun/cn/series/123');
 
     final detail = await repository.detail(seed);
     expect(detail.author, '测试作者');
@@ -328,7 +353,7 @@ void main() {
     expect(chapters, hasLength(1));
     expect(chapters.single.title, '第一章');
     expect(chapters.single.volumeTitle, '第一卷');
-    expect(chapters.single.sourceUrl, 'https://www.lightnovel.fun/reader/123/22');
+    expect(chapters.single.sourceUrl, 'https://www.lightnovel.fun/cn/detail/22?book_id=123');
 
     final body = await repository.chapterContent(chapters.single);
     expect(body, contains('第一段正文。'));
@@ -341,11 +366,58 @@ void main() {
     ]);
   });
 
+  test('uses a separate browse URL template for the homepage', () async {
+    final config = _config(browseUrlTemplate: '/latest?page={page}');
+    final repository = BookSourceRepository(
+      config,
+      request: (url, {required baseUrl, required requestHosts}) async {
+        expect(baseUrl, config.baseUrl);
+        expect(requestHosts, config.requestHosts);
+        expect(url, 'https://source.example/latest?page=2');
+        return '''
+          <div class="book-result">
+            <a class="title" href="/book/88">Latest Novel</a>
+          </div>
+        ''';
+      },
+    );
+    final result = await repository.browse(page: 2);
+    expect(result.page, 2);
+    expect(result.items.single.title, 'Latest Novel');
+  });
+
+  test('allows configured API hosts and blocks unconfigured hosts', () async {
+    final config = _config(
+      searchUrlTemplate: 'https://api.source.example/search?q={keyword}&page={page}',
+      requestHosts: const ['api.source.example'],
+    );
+    final repository = BookSourceRepository(
+      config,
+      request: (url, {required baseUrl, required requestHosts}) async {
+        expect(requestHosts, ['api.source.example']);
+        return '''
+          <div class="book-result">
+            <a class="title" href="/book/89">API Novel</a>
+          </div>
+        ''';
+      },
+    );
+    final result = await repository.search('API');
+    expect(result.items.single.title, 'API Novel');
+
+    final blocked = BookSourceRepository(
+      _config(searchUrlTemplate: 'https://api.source.example/search?q={keyword}&page={page}'),
+      request: (url, {required baseUrl, required requestHosts}) async =>
+          throw StateError('Unconfigured API hosts must be rejected before transport'),
+    );
+    await expectLater(blocked.search('API'), throwsFormatException);
+  });
+
   test('blocks search result links that escape the configured origin', () async {
     final config = _config();
     final repository = BookSourceRepository(
       config,
-      request: (url, {required baseUrl}) async => '''
+      request: (url, {required baseUrl, required requestHosts}) async => '''
         <div class="book-result">
           <a class="title" href="https://outside.example/book">Outside</a>
         </div>
@@ -365,6 +437,8 @@ BookSourceConfig _config({
   String chapterContentSelector = '#content',
   String loginUrl = '',
   List<String> loginHosts = const [],
+  List<String> requestHosts = const [],
+  String browseUrlTemplate = '',
   List<String> imageHosts = const [],
   String searchAuthorSelector = '',
   String searchCoverSelector = '',
@@ -380,6 +454,8 @@ BookSourceConfig _config({
   baseUrl: baseUrl,
   loginUrl: loginUrl,
   loginHosts: loginHosts,
+  requestHosts: requestHosts,
+  browseUrlTemplate: browseUrlTemplate,
   searchUrlTemplate: searchUrlTemplate,
   searchItemSelector: searchItemSelector,
   searchTitleSelector: searchTitleSelector,

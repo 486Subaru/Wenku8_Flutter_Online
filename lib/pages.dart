@@ -41,6 +41,7 @@ import 'book_source_badge.dart';
 import 'book_source_settings_page.dart';
 import 'book_sources.dart';
 import 'book_search.dart';
+import 'online_component.dart';
 import 'blocked_tags_controls.dart';
 import 'catalog.dart';
 import 'glass_dock.dart';
@@ -1128,15 +1129,15 @@ class DiscoverPage extends StatelessWidget {
               ),
             )
           : null;
-      final needsSourceLogin = failure is FormatException &&
-          failure.toString().contains('轻之国度') &&
-          (failure.toString().contains('登录') ||
-              failure.toString().contains('凭据'));
+      final needsSourceLogin = failure is BookSourceAuthenticationRequired;
       final sourceLoginAction = needsSourceLogin
           ? () => unawaited(
               pushNovelPage<void>(
                 context,
-                BookSourceSettingsPage(reduceMotion: state.reduceMotion),
+                BookSourceSettingsPage(
+                  reduceMotion: state.reduceMotion,
+                  onLoginCompleted: () => feed!.retry(),
+                ),
                 reduceMotion: state.reduceMotion,
               ),
             )

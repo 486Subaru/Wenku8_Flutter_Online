@@ -160,10 +160,7 @@ class LegacyWenkuRepository extends NovelRepository
     final selectedSource = bookSources?.homepageSource;
     if (selectedSource != null) {
       // A configured source's empty search is its homepage/discovery feed.
-      final result = await BookSourceRepository(selectedSource).search(
-        '',
-        page: page,
-      );
+      final result = await BookSourceRepository(selectedSource).browse(page: page);
       for (final book in result.items) {
         _customBooks[book.id] = book;
       }
@@ -293,10 +290,15 @@ class LegacyWenkuRepository extends NovelRepository
   }) async {
     final sources = bookSources?.enabledSources ?? const <BookSourceConfig>[];
     if (sources.isEmpty) return const [];
-    final results = await Future.wait([
-      for (final source in sources)
-        _searchOneCustomSource(source, term, field, page),
-    ]);
+    const concurrency = 3;
+    final results = <NovelPage>[];
+    for (var offset = 0; offset < sources.length; offset += concurrency) {
+      final batch = sources.skip(offset).take(concurrency);
+      results.addAll(await Future.wait([
+        for (final source in batch)
+          _searchOneCustomSource(source, term, field, page),
+      ]));
+    }
     return results;
   }
 

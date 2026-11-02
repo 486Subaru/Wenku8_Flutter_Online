@@ -7,6 +7,16 @@ import 'online_component.dart';
 abstract final class LegacyTransport {
   static const channel = MethodChannel('org.mewx.wenku8/official_web');
 
+  static Never _throwSourcePlatform(PlatformException failure) {
+    if (failure.code == 'SOURCE_LOGIN_REQUIRED') {
+      throw BookSourceAuthenticationRequired(failure.message ?? '该书源需要先完成独立登录');
+    }
+    if (failure.code == 'SOURCE_CHALLENGE') {
+      throw FormatException(failure.message ?? '书源网站要求浏览器验证');
+    }
+    throw FormatException(failure.message ?? '书源网站暂时不可用，请检查网络');
+  }
+
   static Never _throwPlatform(PlatformException failure) {
     if (failure.code == 'WEB_LOGIN_REQUIRED') {
       throw const OnlineAuthenticationRequired();
@@ -37,11 +47,13 @@ abstract final class LegacyTransport {
   static Future<String> getSourceText(
     String url, {
     required String baseUrl,
+    List<String> requestHosts = const [],
   }) async {
     try {
       final value = await channel.invokeMethod<String>('getSourceText', {
         'url': url,
         'baseUrl': baseUrl,
+        'requestHosts': requestHosts,
       });
       if (value == null || value.trim().isEmpty) {
         throw const FormatException('书源网站返回了空内容');
@@ -50,7 +62,7 @@ abstract final class LegacyTransport {
     } on MissingPluginException {
       throw const OnlineComponentUnavailable();
     } on PlatformException catch (failure) {
-      throw FormatException(failure.message ?? '书源网站暂时不可用，请检查网址和网络');
+      _throwSourcePlatform(failure);
     }
   }
 
@@ -58,12 +70,14 @@ abstract final class LegacyTransport {
     String url, {
     required String baseUrl,
     required String body,
+    List<String> requestHosts = const [],
   }) async {
     try {
       final value = await channel.invokeMethod<String>('postSourceJson', {
         'url': url,
         'baseUrl': baseUrl,
         'body': body,
+        'requestHosts': requestHosts,
       });
       if (value == null || value.trim().isEmpty) {
         throw const FormatException('书源 API 返回了空内容');
@@ -72,7 +86,7 @@ abstract final class LegacyTransport {
     } on MissingPluginException {
       throw const OnlineComponentUnavailable();
     } on PlatformException catch (failure) {
-      throw FormatException(failure.message ?? '书源 API 请求失败，请检查网络');
+      _throwSourcePlatform(failure);
     }
   }
 
@@ -80,12 +94,14 @@ abstract final class LegacyTransport {
     String query, {
     required String baseUrl,
     required int page,
+    List<String> requestHosts = const [],
   }) async {
     try {
       final value = await channel.invokeMethod<String>('searchLightnovel', {
         'query': query,
         'baseUrl': baseUrl,
         'page': page,
+        'requestHosts': requestHosts,
       });
       if (value == null || value.trim().isEmpty) {
         throw const FormatException('轻之国度搜索结果为空');
@@ -94,7 +110,7 @@ abstract final class LegacyTransport {
     } on MissingPluginException {
       throw const OnlineComponentUnavailable();
     } on PlatformException catch (failure) {
-      throw FormatException(failure.message ?? '轻之国度搜索失败，请先完成独立登录');
+      _throwSourcePlatform(failure);
     }
   }
 

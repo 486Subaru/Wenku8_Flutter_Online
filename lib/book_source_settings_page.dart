@@ -11,8 +11,9 @@ import 'legacy_transport.dart';
 import 'feature_pages.dart';
 
 class BookSourceSettingsPage extends StatelessWidget {
-  const BookSourceSettingsPage({super.key, required this.reduceMotion});
+  const BookSourceSettingsPage({super.key, required this.reduceMotion, this.onLoginCompleted});
   final bool reduceMotion;
+  final Future<void> Function()? onLoginCompleted;
 
   Future<void> _edit(BuildContext context, {BookSourceConfig? source}) async {
     await pushNovelPage<void>(
@@ -35,14 +36,17 @@ class BookSourceSettingsPage extends StatelessWidget {
         baseUrl: source.baseUrl,
         allowedHosts: source.loginHosts,
       );
-      if (accepted) await store.completeSourceLogin(source.id);
+      if (accepted) {
+        await store.completeSourceLogin(source.id);
+        if (store.homepageSourceId == source.id) await onLoginCompleted?.call();
+      }
       if (context.mounted) {
         showNovelFeedback(
           context,
           accepted
-              ? store.homepageSourceId == source.id
+              ? store.homepageSourceId == source.id && onLoginCompleted != null
                   ? '已完成 ${source.name} 登录，主页正在重新加载'
-                  : '已完成 ${source.name} 登录；主页书源设置保持不变，可在主页书源中单独切换'
+                  : '已完成 ${source.name} 登录；返回主页后可重新加载书源'
               : '尚未确认登录，请在网站页面完成登录后点击“完成登录”',
         );
       }
@@ -384,6 +388,8 @@ class _BookSourceEditorPageState extends State<BookSourceEditorPage> {
       'baseUrl': TextEditingController(text: source?.baseUrl ?? ''),
       'loginUrl': TextEditingController(text: source?.loginUrl ?? ''),
       'loginHosts': TextEditingController(text: source?.loginHosts.join(', ') ?? ''),
+      'requestHosts': TextEditingController(text: source?.requestHosts.join(', ') ?? ''),
+      'browseUrlTemplate': TextEditingController(text: source?.browseUrlTemplate ?? ''),
       'testKeyword': TextEditingController(text: '测试'),
       'searchUrlTemplate': TextEditingController(text: source?.searchUrlTemplate ?? ''),
       'searchItemSelector': TextEditingController(text: source?.searchItemSelector ?? ''),
@@ -435,6 +441,13 @@ class _BookSourceEditorPageState extends State<BookSourceEditorPage> {
         .where((host) => host.isNotEmpty)
         .toSet()
         .toList(),
+    requestHosts: _value('requestHosts')
+        .split(RegExp(r'[,，\s]+'))
+        .map((host) => host.trim().toLowerCase())
+        .where((host) => host.isNotEmpty)
+        .toSet()
+        .toList(),
+    browseUrlTemplate: _value('browseUrlTemplate'),
     searchUrlTemplate: _value('searchUrlTemplate'),
     searchItemSelector: _value('searchItemSelector'),
     searchTitleSelector: _value('searchTitleSelector'),
@@ -582,7 +595,7 @@ class _BookSourceEditorPageState extends State<BookSourceEditorPage> {
       children: [
         ContentPanel(
           child: const AppText(
-            '填写网站地址和页面解析规则。搜索地址支持 {keyword} 与 {page}；目录地址模板支持 {bookUrl}。普通请求限制在书源 HTTPS 主域名；登录跳转仅允许根域名及你明确填写的 HTTPS 白名单，图片可额外配置 CDN 域名。',
+            '填写网站地址和页面解析规则。首页、搜索、API、登录跳转和图片 CDN 分别使用独立域名白名单；只允许 HTTPS 精确主机名，不使用通配符。首页可单独配置发现列表地址，避免把空关键词搜索误当作首页。',
           ),
         ),
         const SizedBox(height: 20),
@@ -592,6 +605,8 @@ class _BookSourceEditorPageState extends State<BookSourceEditorPage> {
         _field('baseUrl', '网站根地址', 'https://example.com/', keyboard: TextInputType.url),
         _field('loginUrl', '登录页面（可选）', '留空表示不需要登录；初始地址必须属于网站根域名', keyboard: TextInputType.url),
         _field('loginHosts', '登录跳转域名白名单（可选）', '只填写 HTTPS 主机名，多个用逗号分隔；用于网站登录时的 www / 根域名或认证跳转'),
+        _field('requestHosts', '请求/API 域名白名单（可选）', '只填写 HTTPS 主机名；允许搜索、详情、目录 API 在明确配置的其他域名上访问'),
+        _field('browseUrlTemplate', '首页/发现列表地址模板（可选）', '独立于搜索地址；留空时尝试用空关键词搜索。填写时必须包含 {page}'),
         _field('testKeyword', '测试关键词', '输入目标网站中确定存在的小说名称'),
         _field(
           'searchUrlTemplate',

@@ -1,0 +1,16 @@
+{
+  "id": "lightnovel-fun",
+  "name": "轻之国度",
+  "engine": "lightnovel_fun",
+  "baseUrl": "https://www.lightnovel.fun/",
+  "enabled": false,
+  "loginUrl": "/",
+  "searchUrlTemplate": "",
+  "searchItemSelector": "",
+  "searchTitleSelector": "",
+  "chapterItemSelector": "",
+  "chapterContentSelector": "",
+  "imageHosts": [
+    "lightnovel.fun"
+  ]
+}

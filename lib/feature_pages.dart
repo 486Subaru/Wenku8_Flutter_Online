@@ -321,7 +321,7 @@ class _WenkuAccountPageState extends State<WenkuAccountPage> {
       }
       await store!.completeSourceLogin(source.id);
       if (mounted) {
-        showNovelFeedback(context, '已完成 \${source.name} 登录，主页书源已切换');
+        showNovelFeedback(context, '已完成 ${source.name} 登录，主页书源已切换');
       }
     } catch (error) {
       if (mounted) {
@@ -414,7 +414,7 @@ class _WenkuAccountPageState extends State<WenkuAccountPage> {
                           ? '文库官网登录状态已保存在本机。在线书目与阅读使用文库主站。'
                           : '打开文库官网后，在网站页面完成登录或注册。账号密码和网站验证都由官网处理。'
                       : connected
-                          ? '\${loginSource.name} 的独立登录状态已保存。主页书源已同步到该网站。'
+                          ? '${loginSource.name} 的独立登录状态已保存。主页书源已同步到该网站。'
                           : '登录将在该网站的独立页面中完成。该网站 Cookie 与文库主站分开保存；选择此网站后，主页书源也会同步切换。',
                 ),
                 const SizedBox(height: 24),

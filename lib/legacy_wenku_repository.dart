@@ -210,12 +210,12 @@ class LegacyWenkuRepository extends NovelRepository
       for (final result in customPages)
         for (final book in result.items) book.id: book,
     };
-    final hasMore = primary.hasMore ||
+    final customHasItems =
         customPages.any((result) => result.items.isNotEmpty);
     return NovelPage(
       items: List.unmodifiable(merged.values),
       page: page,
-      totalPages: hasMore ? null : page,
+      totalPages: customHasItems ? null : primary.totalPages ?? page,
       totalItems: null,
       searchFailures: primary.searchFailures,
     );

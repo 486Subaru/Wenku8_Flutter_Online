@@ -18,6 +18,8 @@ import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.net.URLDecoder
+import org.json.JSONObject
 import java.nio.ByteBuffer
 import java.nio.charset.Charset
 import java.nio.charset.CodingErrorAction
@@ -91,6 +93,36 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
                 dispatch(result) {
                     requestSource(url, baseUrl, imageHosts, MAX_IMAGE_BYTES, image = true).bytes
                 }
+            }
+            "postSourceJson" -> {
+                val url = call.argument<String>("url")
+                    ?: return result.error("SOURCE_BAD_URL", "缺少书源 API 地址", null)
+                val baseUrl = call.argument<String>("baseUrl")
+                    ?: return result.error("SOURCE_BAD_URL", "缺少书源网站地址", null)
+                val body = call.argument<String>("body")
+                    ?: return result.error("SOURCE_BAD_BODY", "缺少 API 请求内容", null)
+                if (body.length > 256_000) {
+                    return result.error("SOURCE_BAD_BODY", "API 请求内容过大", null)
+                }
+                dispatch(result) {
+                    val reply = requestSource(
+                        url, baseUrl, emptyList(), MAX_TEXT_BYTES, image = false,
+                        method = "POST",
+                        requestBody = body.toByteArray(Charsets.UTF_8),
+                        contentType = "application/json; charset=UTF-8",
+                    )
+                    decode(reply.bytes, reply.contentType)
+                }
+            }
+            "searchLightnovel" -> {
+                val query = call.argument<String>("query")?.trim().orEmpty()
+                val baseUrl = call.argument<String>("baseUrl")
+                    ?: return result.error("SOURCE_BAD_URL", "缺少轻之国度网站地址", null)
+                val page = call.argument<Int>("page") ?: 1
+                if (query.isEmpty() || query.length > 120 || page !in 1..10000) {
+                    return result.error("SOURCE_BAD_SEARCH", "轻之国度搜索条件无效", null)
+                }
+                dispatch(result) { lightNovelSearch(baseUrl, query, page) }
             }
             "search" -> {
                 val query = call.argument<String>("query")?.trim().orEmpty()
@@ -272,6 +304,9 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
         imageHosts: List<String>,
         maxBytes: Int,
         image: Boolean,
+        method: String = "GET",
+        requestBody: ByteArray? = null,
+        contentType: String? = null,
     ): Reply {
         val origin = runCatching { URL(rawBaseUrl) }
             .getOrElse { throw WebFailure("SOURCE_BAD_URL", "书源网站地址无效") }
@@ -291,7 +326,7 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
             waitForSourceRequestSlot()
             val connection = current.openConnection() as HttpURLConnection
             try {
-                connection.requestMethod = "GET"
+                connection.requestMethod = method
                 connection.connectTimeout = 12_000
                 connection.readTimeout = 20_000
                 connection.instanceFollowRedirects = false
@@ -301,12 +336,22 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
                 connection.setRequestProperty(
                     "Accept",
                     if (image) "image/avif,image/webp,image/apng,image/*,*/*;q=0.8"
+                    else if (method == "POST") "application/json, text/plain, */*"
                     else "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                 )
                 if (sameOrigin(current, origin)) {
                     connection.setRequestProperty("Referer", rawBaseUrl)
                     Wenku8SessionCookies.cookieHeader(current.toString())?.let {
                         connection.setRequestProperty("Cookie", it)
+                    }
+                }
+                if (method == "POST") {
+                    connection.doOutput = true
+                    connection.setRequestProperty("Content-Type", contentType ?: "application/json; charset=UTF-8")
+                    connection.setRequestProperty("X-Requested-With", "XMLHttpRequest")
+                    connection.setRequestProperty("Origin", origin.protocol + "://" + origin.host)
+                    requestBody?.let { bytes ->
+                        connection.outputStream.use { output -> output.write(bytes) }
                     }
                 }
 
@@ -357,6 +402,66 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
             }
         }
         throw WebFailure("SOURCE_REDIRECT_ERROR", "书源网站跳转次数过多")
+    }
+
+    private fun lightNovelSearch(rawBaseUrl: String, query: String, page: Int): String {
+        val origin = runCatching { URL(rawBaseUrl) }
+            .getOrElse { throw WebFailure("SOURCE_BAD_URL", "轻之国度网站地址无效") }
+        if (!safeHttps(origin) || !origin.host.equals("www.lightnovel.fun", ignoreCase = true)) {
+            throw WebFailure("SOURCE_BAD_URL", "轻之国度书源必须使用 https://www.lightnovel.fun/")
+        }
+
+        val cookies = Wenku8SessionCookies.cookieHeader(rawBaseUrl).orEmpty()
+        val rawToken = cookies.split(';')
+            .map { it.trim() }
+            .firstOrNull { it.startsWith("token=") }
+            ?.substringAfter("token=")
+            .orEmpty()
+        if (rawToken.isBlank()) {
+            throw WebFailure("SOURCE_LOGIN_REQUIRED", "轻之国度搜索需要先登录：请在书源卡片点击“独立登录”")
+        }
+
+        var tokenText = rawToken
+        var securityKey = ""
+        repeat(3) {
+            val token = runCatching { JSONObject(tokenText) }.getOrNull()
+            if (token != null) {
+                securityKey = token.optString("security_key")
+                if (securityKey.isNotBlank()) return@repeat
+            }
+            tokenText = runCatching { URLDecoder.decode(tokenText, "UTF-8") }
+                .getOrDefault(tokenText)
+        }
+        if (securityKey.isBlank()) {
+            throw WebFailure("SOURCE_LOGIN_REQUIRED", "没有读取到轻之国度登录凭据，请重新完成网站登录")
+        }
+
+        val payload = JSONObject()
+            .put("is_encrypted", 0)
+            .put("platform", "pc")
+            .put("client", "web")
+            .put("sign", "")
+            .put("gz", 0)
+            .put(
+                "d",
+                JSONObject()
+                    .put("q", query)
+                    .put("page", page)
+                    .put("type", 0)
+                    .put("security_key", securityKey),
+            )
+        val endpoint = URL(origin, "/proxy/api/search/search-result").toString()
+        val reply = requestSource(
+            endpoint,
+            rawBaseUrl,
+            emptyList(),
+            MAX_TEXT_BYTES,
+            image = false,
+            method = "POST",
+            requestBody = payload.toString().toByteArray(Charsets.UTF_8),
+            contentType = "application/json; charset=UTF-8",
+        )
+        return decode(reply.bytes, reply.contentType)
     }
 
     private fun safeHttps(url: URL): Boolean =

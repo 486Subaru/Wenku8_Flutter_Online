@@ -43,6 +43,20 @@ internal object Wenku8SessionCookies {
         flush()
     }
 
+    /** Keep cookies for a user-configured source scoped to its exact HTTPS origin. */
+    fun absorbSource(url: String, baseUrl: String, headers: List<String>) {
+        val target = runCatching { java.net.URI(url) }.getOrNull() ?: return
+        val base = runCatching { java.net.URI(baseUrl) }.getOrNull() ?: return
+        if (headers.isEmpty() ||
+            target.scheme != "https" ||
+            base.scheme != "https" ||
+            target.host?.equals(base.host, ignoreCase = true) != true ||
+            (if (target.port == -1) 443 else target.port) !=
+                (if (base.port == -1) 443 else base.port)) return
+        setCookies(url, headers)
+        flush()
+    }
+
     /** Remove only Wenku8 cookies, leaving cookies for every other site intact. */
     fun clear() {
         val names = parse(cookieHeader(ORIGIN).orEmpty()).keys

@@ -34,8 +34,8 @@ class LegacyWenkuRepository extends NovelRepository
   final BookSourceStore? bookSources;
   final Map<int, Novel> _customBooks = {};
 
-  final Map<(NovelSort, int), NovelPage> _pages = {};
-  final Map<(NovelSort, int), Future<NovelPage>> _pendingPages = {};
+  final Map<(String?, NovelSort, int), NovelPage> _pages = {};
+  final Map<(String?, NovelSort, int), Future<NovelPage>> _pendingPages = {};
   final Map<(int, int), NovelPage> _publicationPages = {};
   final Map<(int, int), Future<NovelPage>> _pendingPublicationPages = {};
   final Map<int, Novel> _details = {};
@@ -141,7 +141,8 @@ class LegacyWenkuRepository extends NovelRepository
     if (page < 1 || page > 100000) {
       throw ArgumentError.value(page, 'page');
     }
-    final key = (sort, page);
+    final sourceId = bookSources?.homepageSourceId;
+    final key = (sourceId, sort, page);
     if (refresh) {
       _pages.remove(key);
       _pendingPages.remove(key);
@@ -156,6 +157,19 @@ class LegacyWenkuRepository extends NovelRepository
   }
 
   Future<NovelPage> _loadBrowse(NovelSort sort, int page) async {
+    final selectedSource = bookSources?.homepageSource;
+    if (selectedSource != null) {
+      // A configured source's empty search is its homepage/discovery feed.
+      final result = await BookSourceRepository(selectedSource).search(
+        '',
+        page: page,
+      );
+      for (final book in result.items) {
+        _customBooks[book.id] = book;
+      }
+      _pages[(selectedSource.id, sort, page)] = result;
+      return result;
+    }
     final url = sort == NovelSort.fullFlag
         ? _base + 'modules/article/articlelist.php?fullflag=1&page=' + page.toString()
         : _base +
@@ -165,7 +179,7 @@ class LegacyWenkuRepository extends NovelRepository
             page.toString();
     final source = await _request(url, referer: _base + 'index.php');
     final result = Wenku8HtmlParser.parseBookPage(source, page);
-    _pages[(sort, page)] = result;
+    _pages[(null, sort, page)] = result;
     return result;
   }
 
@@ -194,6 +208,46 @@ class LegacyWenkuRepository extends NovelRepository
     }
     if (page < 1 || page > 100000) {
       throw ArgumentError.value(page, 'page');
+    }
+    final selectedSource = bookSources?.homepageSource;
+    if (selectedSource != null) {
+      if (field == BookSearchField.id) {
+        final id = int.tryParse(term);
+        final book = id == null ? null : _customBooks[id];
+        return NovelPage(
+          items: book == null ? const [] : [book],
+          page: page,
+          totalPages: book == null ? 0 : 1,
+          totalItems: book == null ? 0 : 1,
+        );
+      }
+      final result = await BookSourceRepository(selectedSource).search(
+        term,
+        page: page,
+        field: field == BookSearchField.author ? 'author' : 'title',
+      );
+      for (final book in result.items) {
+        _customBooks[book.id] = book;
+      }
+      if (field == BookSearchField.all ||
+          field == BookSearchField.title ||
+          field == BookSearchField.author) {
+        return result;
+      }
+      final pattern = BookSearch(term, field: field);
+      final filtered = result.items.where((book) => pattern.matches(
+        title: book.title,
+        author: book.author,
+        tags: book.genre,
+        summary: book.summary,
+        id: book.id.toString(),
+      )).toList();
+      return NovelPage(
+        items: List.unmodifiable(filtered),
+        page: page,
+        totalPages: result.totalPages,
+        totalItems: filtered.length,
+      );
     }
     final primaryFuture = _searchWenkuFilteredPage(
       term,

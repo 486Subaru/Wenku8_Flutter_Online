@@ -378,7 +378,7 @@ class BookSourceStore extends ChangeNotifier {
     if (source == null || source.loginUrl.trim().isEmpty) {
       throw const FormatException('登录书源已不存在，请重新选择');
     }
-    final loggedIn = {
+    final loggedIn = <String>{
       ...(preferences.getStringList(loggedInSourcesPreferenceKey) ?? const <String>[]),
       id,
     }.toList()..sort();

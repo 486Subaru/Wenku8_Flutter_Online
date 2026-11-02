@@ -1,4 +1,5 @@
 import 'book_search.dart';
+import 'book_sources.dart';
 import 'catalog.dart';
 import 'legacy_transport.dart';
 import 'publication_catalog.dart';
@@ -22,12 +23,16 @@ class LegacyWenkuRepository extends NovelRepository
   LegacyWenkuRepository({
     _WenkuPageRequest? request,
     _WenkuSearchRequest? searchRequest,
+    BookSourceStore? bookSources,
   }) : _request = request ?? LegacyTransport.getText,
-       _searchRequest = searchRequest ?? LegacyTransport.search;
+       _searchRequest = searchRequest ?? LegacyTransport.search,
+       bookSources = bookSources ?? BookSourceStore.instance;
 
   static const _base = Wenku8HtmlParser.base;
   final _WenkuPageRequest _request;
   final _WenkuSearchRequest _searchRequest;
+  final BookSourceStore? bookSources;
+  final Map<int, Novel> _customBooks = {};
 
   final Map<(NovelSort, int), NovelPage> _pages = {};
   final Map<(NovelSort, int), Future<NovelPage>> _pendingPages = {};
@@ -44,6 +49,9 @@ class LegacyWenkuRepository extends NovelRepository
   @override
   Future<Novel?> find(int id) async {
     if (id <= 0) return null;
+    if (id >= 0x40000000 && id < 0x60000000) {
+      return _customBooks[id];
+    }
     try {
       return (await _loadDetail(id)).book;
     } on FormatException {
@@ -56,12 +64,31 @@ class LegacyWenkuRepository extends NovelRepository
       (await searchFilteredPage(query)).items;
 
   @override
-  Future<Novel> detail(Novel novel) async =>
-      (await _loadDetail(novel.id, seed: novel)).book;
+  Future<Novel> detail(Novel novel) async {
+    final sourceId = novel.sourceId;
+    if (sourceId != null) {
+      final source = bookSources?.byId(sourceId);
+      if (source == null) {
+        throw const FormatException('这本书的书源配置已删除，请重新添加原网站配置');
+      }
+      final loaded = await BookSourceRepository(source).detail(novel);
+      _customBooks[loaded.id] = loaded;
+      return loaded;
+    }
+    return (await _loadDetail(novel.id, seed: novel)).book;
+  }
 
   @override
   Future<List<NovelChapter>> chapters(int id) async {
     if (id <= 0) throw ArgumentError.value(id, 'id');
+    final custom = _customBooks[id];
+    if (custom != null && custom.sourceId != null) {
+      final source = bookSources?.byId(custom.sourceId!);
+      if (source == null) {
+        throw const FormatException('这本书的书源配置已删除，请重新添加原网站配置');
+      }
+      return BookSourceRepository(source).chapters(custom);
+    }
     var prefix = _novelPrefixes[id];
     if (prefix == null || prefix.isEmpty) {
       await _loadDetail(id);
@@ -81,6 +108,13 @@ class LegacyWenkuRepository extends NovelRepository
   Future<String> chapterContent(int novelId, NovelChapter chapter) async {
     if (novelId <= 0 || chapter.id <= 0) {
       throw ArgumentError('Invalid novel or chapter ID');
+    }
+    if (chapter.sourceId != null) {
+      final source = bookSources?.byId(chapter.sourceId!);
+      if (source == null) {
+        throw const FormatException('这本书的书源配置已删除，请重新添加原网站配置');
+      }
+      return BookSourceRepository(source).chapterContent(chapter);
     }
     var prefix = _novelPrefixes[novelId];
     if (prefix == null || prefix.isEmpty) {
@@ -161,6 +195,82 @@ class LegacyWenkuRepository extends NovelRepository
     if (page < 1 || page > 100000) {
       throw ArgumentError.value(page, 'page');
     }
+    final primaryFuture = _searchWenkuFilteredPage(
+      term,
+      field: field,
+      page: page,
+      refresh: refresh,
+    );
+    final customFuture = field == BookSearchField.id
+        ? Future.value(const <NovelPage>[])
+        : _searchCustomSources(term, field: field, page: page);
+    final primary = await primaryFuture;
+    final customPages = await customFuture;
+    final merged = <int, Novel>{
+      for (final book in primary.items) book.id: book,
+      for (final result in customPages)
+        for (final book in result.items) book.id: book,
+    };
+    final hasMore = primary.hasMore ||
+        customPages.any((result) => result.items.isNotEmpty);
+    return NovelPage(
+      items: List.unmodifiable(merged.values),
+      page: page,
+      totalPages: hasMore ? null : page,
+      totalItems: null,
+      searchFailures: primary.searchFailures,
+    );
+  }
+
+  Future<List<NovelPage>> _searchCustomSources(
+    String term, {
+    required BookSearchField field,
+    required int page,
+  }) async {
+    final sources = bookSources?.enabledSources ?? const <BookSourceConfig>[];
+    if (sources.isEmpty) return const [];
+    final results = await Future.wait([
+      for (final source in sources)
+        _searchOneCustomSource(source, term, field, page),
+    ]);
+    return results;
+  }
+
+  Future<NovelPage> _searchOneCustomSource(
+    BookSourceConfig source,
+    String term,
+    BookSearchField field,
+    int page,
+  ) async {
+    try {
+      final result = await BookSourceRepository(source).search(term, page: page);
+      if (field == BookSearchField.all) return result;
+      final pattern = BookSearch(term, field: field);
+      final filtered = result.items.where((book) => pattern.matches(
+        title: book.title,
+        author: book.author,
+        tags: book.genre,
+        summary: book.summary,
+        id: book.id.toString(),
+      )).toList();
+      return NovelPage(
+        items: List.unmodifiable(filtered),
+        page: page,
+        totalPages: result.totalPages,
+        totalItems: filtered.length,
+      );
+    } catch (_) {
+      // A broken optional source must not hide results from the primary site.
+      return NovelPage(items: const [], page: page, totalPages: page);
+    }
+  }
+
+  Future<NovelPage> _searchWenkuFilteredPage(
+    String term, {
+    required BookSearchField field,
+    required int page,
+    required bool refresh,
+  }) async {
     if (field == BookSearchField.id) {
       final id = int.tryParse(term);
       if (id == null || id <= 0 || page > 1) {
@@ -288,20 +398,11 @@ class LegacyWenkuRepository extends NovelRepository
     if (current != null && !current()) {
       return NovelPage(items: const [], page: page, totalPages: 0);
     }
-    final source = await _searchPage(term, 'articlename', page);
-    final pattern = BookSearch(term, field: BookSearchField.tags);
-    final items = source.items.where((book) => pattern.matches(
-      title: book.title,
-      author: book.author,
-      tags: book.genre,
-      summary: book.summary,
-      id: book.id.toString(),
-    )).toList();
-    final result = NovelPage(
-      items: List.unmodifiable(items),
+    final result = await searchFilteredPage(
+      term,
+      field: BookSearchField.tags,
       page: page,
-      totalPages: source.totalPages,
-      totalItems: items.length,
+      refresh: refresh,
     );
     onProgress?.call(
       TagSearchProgress(

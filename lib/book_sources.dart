@@ -695,7 +695,7 @@ class BookSourceRepository {
       final title = _clean(
         (row['title'] ?? row['name'] ?? row['series_name'] ?? '').toString(),
       );
-      if (bookId == null || bookId <= 0 || title.isEmpty) continue;
+      if (bookId <= 0 || title.isEmpty) continue;
       final id = _stableId(source.id + '|' + bookId.toString(), 0x40000000);
       if (!seen.add(id)) continue;
       final cover = (row['cover'] ?? row['cover_url'] ?? '').toString();

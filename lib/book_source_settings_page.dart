@@ -443,7 +443,7 @@ class _BookSourceEditorPageState extends State<BookSourceEditorPage> {
         _field(
           'searchUrlTemplate',
           '搜索地址模板',
-          '例如：https://example.com/search?q={keyword}&page={page}',
+          '例如：https://example.com/search?q={keyword}&page={page}；可选 {field}',
           lines: 2,
           keyboard: TextInputType.url,
         ),

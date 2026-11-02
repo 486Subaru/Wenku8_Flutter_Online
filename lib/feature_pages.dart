@@ -245,7 +245,7 @@ class _WenkuAccountPageState extends State<WenkuAccountPage> {
               AppText(
                 account.authenticated
                     ? '官网登录状态已保存在本机。本阶段先恢复在线书目与阅读；云书架、签到和评论功能将在后续阶段接入。'
-                    : '点击下方按钮打开文库官方登录页面。账号密码和网站验证都由官网处理，应用不会把密码发送给第三方中继。',
+                    : '点击下方按钮打开文库官网首页，再选择登录或注册。账号密码和网站验证都由官网处理，应用不会把密码发送给第三方中继。',
               ),
               const SizedBox(height: 24),
               if (!account.authenticated)
@@ -256,7 +256,7 @@ class _WenkuAccountPageState extends State<WenkuAccountPage> {
                       GlassTextButton(
                         key: const ValueKey('account-login'),
                         onPressed: account.busy ? null : _login,
-                        child: const AppText('打开官网登录'),
+                        child: const AppText('打开文库官网'),
                       ),
                     ],
                   ),
@@ -276,7 +276,7 @@ class _WenkuAccountPageState extends State<WenkuAccountPage> {
                 GlassTextButton(
                   key: const ValueKey('account-reverify'),
                   onPressed: account.busy ? null : _login,
-                  child: const AppText('重新打开官网验证'),
+                  child: const AppText('重新打开文库官网'),
                 ),
                 const SizedBox(height: 12),
                 GlassTextButton(

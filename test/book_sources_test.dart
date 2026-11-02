@@ -49,13 +49,13 @@ void main() {
     final readerSource = await store.installPreset('lightnovel-fun');
     expect(readerSource.supportsReading, isTrue);
     await store.setLoginSourceId(readerSource.id);
-    expect(store.homepageSourceId, readerSource.id);
+    expect(store.homepageSourceId, isNull);
 
     final browserOnly = await store.installPreset('linovelib-web');
     expect(browserOnly.supportsReading, isFalse);
     await store.setLoginSourceId(browserOnly.id);
     expect(store.loginSourceId, browserOnly.id);
-    expect(store.homepageSourceId, readerSource.id);
+    expect(store.homepageSourceId, isNull);
     expect(
       store.enabledSources.map((source) => source.id),
       isNot(contains(browserOnly.id)),

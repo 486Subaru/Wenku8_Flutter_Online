@@ -35,7 +35,6 @@ import 'updates/harmony_update_platform.dart';
 import 'updates/update_page.dart';
 import 'wenku_account.dart';
 import 'wenku_features.dart';
-import 'wenku_shelf_sync.dart';
 import 'publication_catalog.dart';
 import 'lan_reading_sync.dart';
 import 'lan_handoff_widgets.dart';
@@ -82,7 +81,7 @@ Future<void> main() async {
   final WenkuAccount? account = LocalPlatform.fileActions
       ? WenkuAccount()
       : null;
-  const remote = LegacyWenkuRepository();
+  final remote = LegacyWenkuRepository();
   final repository = LocalPlatform.fileActions
       ? await openApplicationLibrary(remote: remote, network: network)
       : const DemoNovelRepository();
@@ -96,15 +95,7 @@ Future<void> main() async {
   final features = account != null
       ? WenkuFeatures(
           account: account,
-          // The authenticated novellist response already contains book metadata.
-          // Reuse its adapter, pagination and the existing account session.
           publications: remote as PublicationCatalog,
-          shelfSync: WenkuShelfSync(
-            account: account,
-            library: state,
-            preferences: await SharedPreferences.getInstance(),
-            network: network,
-          )..start(),
         )
       : null;
   final customSpeech = LocalPlatform.listening ? CustomSpeechSettings() : null;

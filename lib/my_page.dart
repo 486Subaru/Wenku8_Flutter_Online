@@ -6,6 +6,7 @@ import 'app_ui.dart';
 import 'bookmark_library_page.dart';
 import 'reading_statistics_page.dart';
 import 'catalog.dart';
+import 'book_sources.dart';
 import 'dock_layout.dart';
 import 'feature_pages.dart';
 import 'library_state.dart';
@@ -36,6 +37,7 @@ class MyPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final features = WenkuFeaturesScope.maybeOf(context);
     final updates = AppUpdatesScope.maybeOf(context);
+    final bookSources = BookSourceStore.instance;
     return GlassHeaderLayout(
       showHeader: showHeader,
       header: buildHeader(context),
@@ -53,10 +55,17 @@ class MyPage extends StatelessWidget {
                 animation: Listenable.merge([
                   features?.account ?? state.bookmarkChanges,
                   ?features?.shelfSync,
+                  ?bookSources,
                 ]),
                 builder: (context, _) {
                   final account = features?.account;
                   final profile = account?.profile;
+                  final loginSource = bookSources?.loginSource;
+                  final sourceConnected = loginSource == null
+                      ? account?.authenticated == true
+                      : bookSources!.isSourceLoggedIn(loginSource.id);
+                  final officialConnected =
+                      loginSource == null && account?.authenticated == true;
                   return ContentPanel(
                     key: const ValueKey('my-account'),
                     onTap: account == null
@@ -74,7 +83,7 @@ class MyPage extends StatelessWidget {
                       children: [
                         ClipRRect(
                           borderRadius: BorderRadius.circular(16),
-                          child: account?.authenticated == true
+                          child: officialConnected
                               ? SizedBox(
                                   width: 56,
                                   height: 56,
@@ -124,9 +133,11 @@ class MyPage extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               AppText(
-                                account?.authenticated == true
-                                    ? profile?.displayName ?? '文库账号'
-                                    : '登录文库账号',
+                                sourceConnected
+                                    ? loginSource?.name ?? profile?.displayName ?? '文库账号'
+                                    : loginSource == null
+                                        ? '登录文库账号'
+                                        : '登录${loginSource.name}账号',
                                 style: const TextStyle(
                                   fontSize: 20,
                                   fontWeight: FontWeight.w600,
@@ -134,19 +145,23 @@ class MyPage extends StatelessWidget {
                               ),
                               const SizedBox(height: 7),
                               AppText(
-                                account?.authenticated == true
-                                    ? profile == null
-                                          ? '账号已连接'
-                                          : '${profile.score} 积分 · ${profile.rank}${features?.shelfSync == null
-                                                ? ''
-                                                : features!.shelfSync!.syncing
-                                                ? '\n书架正在同步'
-                                                : features.shelfSync!.error != null
-                                                ? '\n书架待同步 · ${features.shelfSync!.error}'
-                                                : features.shelfSync!.syncedAt != null
-                                                ? '\n书架已与文库同步'
-                                                : ''}'
-                                    : '轻小说文库账号 · 云书架与每日签到',
+                                sourceConnected
+                                    ? loginSource != null
+                                          ? '\${loginSource.name}账号已连接 · 主页书源已同步'
+                                          : profile == null
+                                              ? '账号已连接'
+                                              : '\${profile.score} 积分 · \${profile.rank}\${features?.shelfSync == null
+                                                    ? ''
+                                                    : features!.shelfSync!.syncing
+                                                    ? '\\n书架正在同步'
+                                                    : features.shelfSync!.error != null
+                                                    ? '\\n书架待同步 · \${features.shelfSync!.error}'
+                                                    : features.shelfSync!.syncedAt != null
+                                                    ? '\\n书架已与文库同步'
+                                                    : ''}'
+                                    : loginSource == null
+                                        ? '轻小说文库账号 · 云书架与每日签到'
+                                        : '当前登录网站 · \${loginSource.name}',
                                 style: TextStyle(
                                   fontSize: 12,
                                   height: 1.6,

@@ -44,24 +44,14 @@ class BookSourceSettingsPage extends StatelessWidget {
   }
 
   Future<void> _remove(BuildContext context, BookSourceStore store, BookSourceConfig source) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialog) => AlertDialog(
-        title: const Text('删除这个书源？'),
-        content: Text('删除“' + source.name + '”后，它将不再参与搜索。已缓存的书籍正文和阅读记录不会主动删除。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialog, false),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialog, true),
-            child: const Text('删除'),
-          ),
-        ],
-      ),
+    final confirmed = await confirmNovelAction(
+      context,
+      title: '删除这个书源？',
+      message: '删除“' + source.name + '”后，它将不再参与搜索。已缓存的书籍正文和阅读记录不会主动删除。',
+      confirmLabel: '删除',
+      reduceMotion: reduceMotion,
     );
-    if (confirmed != true) return;
+    if (!confirmed) return;
     await store.remove(source.id);
     if (context.mounted) showNovelFeedback(context, '已删除书源配置');
   }
@@ -115,7 +105,7 @@ class BookSourceSettingsPage extends StatelessWidget {
                     style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
                   ),
                   SizedBox(height: 8),
-                  AppText('www.wenku8.net · 主站登录、首页与默认发现页保持不变。其他书源独立配置，不会替换主站账号。'),
+                  AppText('www.wenku8.net · 主站登录、首页与默认发现页保持不变。其他书源独立配置；只有开启“参与搜索”的网站才会加入全局搜索。'),
                 ],
               ),
             ),
@@ -136,7 +126,7 @@ class BookSourceSettingsPage extends StatelessWidget {
             const SizedBox(height: 12),
             if (store.sources.isEmpty)
               ContentPanel(
-                child: const AppText('还没有添加其他网站。添加书源后，日轻会在搜索时同时查询已启用的网站。'),
+                child: const AppText('还没有添加其他网站。添加后可先测试解析规则，再手动开启“参与搜索”；未启用的网站不会增加搜索请求。'),
               ),
             for (final source in store.sources) ...[
               ContentPanel(
@@ -167,9 +157,33 @@ class BookSourceSettingsPage extends StatelessWidget {
                             ],
                           ),
                         ),
-                        Switch(
-                          value: source.enabled,
-                          onChanged: (value) => store.setEnabled(source.id, value),
+                        Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            AppText(
+                              '参与搜索',
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                            AppControls.toggle(
+                              context,
+                              value: source.enabled,
+                              onChanged: (value) async {
+                                try {
+                                  await store.setEnabled(source.id, value);
+                                } catch (error) {
+                                  if (context.mounted) {
+                                    showNovelFeedback(
+                                      context,
+                                      error.toString().replaceFirst('FormatException: ', ''),
+                                    );
+                                  }
+                                }
+                              },
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -209,7 +223,12 @@ class BookSourceSettingsPage extends StatelessWidget {
   }
 
   Widget _smallAction(BuildContext context, String label, VoidCallback onPressed) =>
-      TextButton(onPressed: onPressed, child: Text(label));
+      GlassTextButton(
+        compact: true,
+        onPressed: onPressed,
+        haptic: label == '删除' ? HapticCue.warning : HapticCue.action,
+        child: AppText(label),
+      );
 }
 
 class BookSourceEditorPage extends StatefulWidget {
@@ -314,7 +333,7 @@ class _BookSourceEditorPageState extends State<BookSourceEditorPage> {
         .where((host) => host.isNotEmpty)
         .toSet()
         .toList(),
-    enabled: widget.source?.enabled ?? true,
+    enabled: widget.source?.enabled ?? false,
   );
 
   Future<void> _save() async {
@@ -368,18 +387,35 @@ class _BookSourceEditorPageState extends State<BookSourceEditorPage> {
     int lines = 1,
     TextInputType keyboard = TextInputType.text,
   }) => Padding(
-    padding: const EdgeInsets.only(bottom: 12),
-    child: TextField(
-      controller: _fields[key],
-      maxLines: lines,
-      keyboardType: keyboard,
-      autocorrect: false,
-      enableSuggestions: false,
-      decoration: InputDecoration(
-        labelText: label,
-        helperText: hint,
-        border: const OutlineInputBorder(),
-        alignLabelWithHint: lines > 1,
+    padding: const EdgeInsets.only(bottom: 10),
+    child: ContentPanel(
+      padding: const EdgeInsets.fromLTRB(14, 11, 14, 9),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AppText(
+            label,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 5),
+          TextField(
+            controller: _fields[key],
+            maxLines: lines,
+            keyboardType: keyboard,
+            autocorrect: false,
+            enableSuggestions: false,
+            style: const TextStyle(fontSize: 14, height: 1.35),
+            decoration: InputDecoration(
+              hintText: hint,
+              border: InputBorder.none,
+              enabledBorder: InputBorder.none,
+              focusedBorder: InputBorder.none,
+              isDense: true,
+              contentPadding: EdgeInsets.zero,
+              alignLabelWithHint: lines > 1,
+            ),
+          ),
+        ],
       ),
     ),
   );

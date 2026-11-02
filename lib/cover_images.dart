@@ -6,7 +6,12 @@ import 'reader_illustrations.dart';
 
 ReaderIllustrationCache novelCoverImageCache(Novel book) =>
     ReaderIllustrationCache(
-      request: (_) => LegacyCover.bytes(book.id, url: book.coverUrl),
+      request: (_) => LegacyCover.bytes(
+        book.id,
+        url: book.coverUrl,
+        sourceBaseUrl: book.sourceBaseUrl,
+        imageHosts: book.sourceImageHosts,
+      ),
     );
 
 Future<void> openNovelCoverImage(

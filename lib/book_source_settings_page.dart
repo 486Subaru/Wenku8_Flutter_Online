@@ -33,7 +33,7 @@ class BookSourceSettingsPage extends StatelessWidget {
       if (context.mounted) {
         showNovelFeedback(
           context,
-          accepted ? '已保存该网站的独立登录状态' : '尚未确认登录，请完成网站登录后重试',
+          accepted ? '已检测到该网站 Cookie；登录是否成功以网站页面为准' : '尚未检测到该网站 Cookie，请完成登录后重试',
         );
       }
     } catch (error) {

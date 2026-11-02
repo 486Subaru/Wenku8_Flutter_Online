@@ -76,7 +76,7 @@ class BookSourceConfig {
 
   Uri get baseUri {
     final uri = Uri.parse(baseUrl.trim());
-    return uri.replace(path: uri.path.endsWith('/') ? uri.path : uri.path + '/');
+    return uri.replace(path: uri.path.endsWith('/') ? uri.path : '${uri.path}/');
   }
 
   BookSourceConfig withEnabled(bool value) => BookSourceConfig(
@@ -503,7 +503,7 @@ class BookSourceRepository {
         final title = _clean(titleNode.text);
         if (title.isEmpty || chapterUrl == null) continue;
         final id = _stableId(
-          source.id + '|' + novel.id.toString() + '|' + chapterUrl.toString(),
+          '${source.id}|${novel.id}|${chapterUrl}',
           0x20000000,
         );
         if (!seenIds.add(id)) continue;
@@ -566,7 +566,7 @@ class BookSourceRepository {
       final image = _resolveImage(raw);
       return image == null
           ? ''
-          : '\n\n<!--image-->' + image.toString() + '<!--image-->\n\n';
+          : '\n\n<!--image-->${image.toString()}<!--image-->\n\n';
     }
     if (const {
       'script',

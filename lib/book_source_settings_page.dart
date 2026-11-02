@@ -112,7 +112,7 @@ class BookSourceSettingsPage extends StatelessWidget {
             const SizedBox(height: 16),
             FeatureEntry(
               title: '添加自定义书源',
-              subtitle: '配置搜索、详情、目录和正文 CSS 规则',
+              subtitle: '配置静态网站 CSS 规则；支持已适配网站的专用 API',
               icon: CupertinoIcons.add_circled,
               onTap: () => _edit(context),
             ),
@@ -209,7 +209,7 @@ class BookSourceSettingsPage extends StatelessWidget {
             ],
             const SizedBox(height: 12),
             AppText(
-              '说明：当前通用书源抓取与独立登录首版仅接入 Android。解析面向 HTTPS 静态 HTML 页面，使用 CSS 选择器提取数据。需要复杂 JavaScript 渲染、验证码或特殊接口的网站，可能需要额外适配。书源登录 Cookie 按网站域名隔离。',
+              '说明：通用书源使用 HTTPS 静态 HTML 与 CSS 选择器；轻之国度另有专用 JSON API 适配。其他依赖复杂 JavaScript、验证码或特殊接口的网站仍需单独适配。书源登录 Cookie 按网站域名隔离。',
               style: TextStyle(
                 fontSize: 12,
                 height: 1.6,

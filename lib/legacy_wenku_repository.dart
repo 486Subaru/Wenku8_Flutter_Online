@@ -241,7 +241,11 @@ class LegacyWenkuRepository extends NovelRepository
     int page,
   ) async {
     try {
-      final result = await BookSourceRepository(source).search(term, page: page);
+      final result = await BookSourceRepository(source).search(
+        term,
+        page: page,
+        field: field == BookSearchField.author ? 'author' : 'title',
+      );
       if (field == BookSearchField.all) return result;
       final pattern = BookSearch(term, field: field);
       final filtered = result.items.where((book) => pattern.matches(

@@ -26,6 +26,7 @@ class BookSourceConfig {
     required this.chapterItemSelector,
     required this.chapterContentSelector,
     this.enabled = true,
+    this.loginUrl = '',
     this.searchLinkSelector = '',
     this.searchAuthorSelector = '',
     this.searchSummarySelector = '',
@@ -48,6 +49,7 @@ class BookSourceConfig {
   final String name;
   final String baseUrl;
   final bool enabled;
+  final String loginUrl;
   final String searchUrlTemplate;
   final String searchItemSelector;
   final String searchTitleSelector;
@@ -80,6 +82,7 @@ class BookSourceConfig {
     name: name,
     baseUrl: baseUrl,
     enabled: value,
+    loginUrl: loginUrl,
     searchUrlTemplate: searchUrlTemplate,
     searchItemSelector: searchItemSelector,
     searchTitleSelector: searchTitleSelector,
@@ -120,6 +123,16 @@ class BookSourceConfig {
         (uri.hasPort && uri.port != 443) ||
         baseUrl.length > 2048) {
       throw const FormatException('网站地址必须是完整的 HTTPS 地址');
+    }
+    if (loginUrl.trim().isNotEmpty) {
+      final login = uri.resolve(loginUrl.trim());
+      if (login.scheme != 'https' ||
+          login.host != uri.host ||
+          login.port != uri.port ||
+          login.userInfo.isNotEmpty ||
+          login.hasFragment) {
+        throw const FormatException('登录网址必须与书源使用同一个 HTTPS 域名');
+      }
     }
     if (!searchUrlTemplate.contains('{keyword}') ||
         !searchUrlTemplate.contains('{page}') ||
@@ -182,6 +195,7 @@ class BookSourceConfig {
     'name': name,
     'baseUrl': baseUrl.trim(),
     'enabled': enabled,
+    'loginUrl': loginUrl,
     'searchUrlTemplate': searchUrlTemplate,
     'searchItemSelector': searchItemSelector,
     'searchTitleSelector': searchTitleSelector,
@@ -213,6 +227,7 @@ class BookSourceConfig {
       name: string('name'),
       baseUrl: string('baseUrl'),
       enabled: value['enabled'] != false,
+      loginUrl: string('loginUrl'),
       searchUrlTemplate: string('searchUrlTemplate'),
       searchItemSelector: string('searchItemSelector'),
       searchTitleSelector: string('searchTitleSelector'),

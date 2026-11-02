@@ -379,7 +379,7 @@ class BookSourceStore extends ChangeNotifier {
       throw const FormatException('登录书源已不存在，请重新选择');
     }
     final loggedIn = {
-      ...(preferences.getStringList(loggedInSourcesPreferenceKey) ?? const []),
+      ...(preferences.getStringList(loggedInSourcesPreferenceKey) ?? const <String>[]),
       id,
     }.toList()..sort();
     await preferences.setStringList(loggedInSourcesPreferenceKey, loggedIn);

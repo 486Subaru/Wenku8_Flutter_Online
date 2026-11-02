@@ -27,6 +27,7 @@ class BookSourceConfig {
     this.loginUrl = '',
     this.searchLinkSelector = '',
     this.searchAuthorSelector = '',
+    this.searchGenreSelector = '',
     this.searchSummarySelector = '',
     this.searchCoverSelector = '',
     this.searchCoverAttribute = 'src',
@@ -53,6 +54,7 @@ class BookSourceConfig {
   final String searchTitleSelector;
   final String searchLinkSelector;
   final String searchAuthorSelector;
+  final String searchGenreSelector;
   final String searchSummarySelector;
   final String searchCoverSelector;
   final String searchCoverAttribute;
@@ -86,6 +88,7 @@ class BookSourceConfig {
     searchTitleSelector: searchTitleSelector,
     searchLinkSelector: searchLinkSelector,
     searchAuthorSelector: searchAuthorSelector,
+    searchGenreSelector: searchGenreSelector,
     searchSummarySelector: searchSummarySelector,
     searchCoverSelector: searchCoverSelector,
     searchCoverAttribute: searchCoverAttribute,
@@ -148,6 +151,7 @@ class BookSourceConfig {
       searchTitleSelector,
       searchLinkSelector,
       searchAuthorSelector,
+      searchGenreSelector,
       searchSummarySelector,
       searchCoverSelector,
       detailTitleSelector,
@@ -199,6 +203,7 @@ class BookSourceConfig {
     'searchTitleSelector': searchTitleSelector,
     'searchLinkSelector': searchLinkSelector,
     'searchAuthorSelector': searchAuthorSelector,
+    'searchGenreSelector': searchGenreSelector,
     'searchSummarySelector': searchSummarySelector,
     'searchCoverSelector': searchCoverSelector,
     'searchCoverAttribute': searchCoverAttribute,
@@ -231,6 +236,7 @@ class BookSourceConfig {
       searchTitleSelector: string('searchTitleSelector'),
       searchLinkSelector: string('searchLinkSelector'),
       searchAuthorSelector: string('searchAuthorSelector'),
+      searchGenreSelector: string('searchGenreSelector'),
       searchSummarySelector: string('searchSummarySelector'),
       searchCoverSelector: string('searchCoverSelector'),
       searchCoverAttribute: string('searchCoverAttribute', 'src'),
@@ -393,6 +399,7 @@ class BookSourceRepository {
       if (!seen.add(id)) continue;
       final author = _text(row, source.searchAuthorSelector);
       final summary = _text(row, source.searchSummarySelector);
+      final genre = _text(row, source.searchGenreSelector);
       final cover = _attribute(
         row,
         source.searchCoverSelector,
@@ -404,7 +411,7 @@ class BookSourceRepository {
           id: id,
           title: title,
           author: author,
-          genre: '',
+          genre: genre,
           summary: summary,
           colors: _colors(id),
           coverUrl: coverUrl,

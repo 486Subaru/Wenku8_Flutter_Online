@@ -387,7 +387,7 @@ class BookSourceRepository {
       final href = linkNode?.attributes['href'] ?? '';
       final bookUrl = _resolvePage(href);
       if (bookUrl == null) continue;
-      final id = _stableId('\${source.id}|$bookUrl', 0x40000000);
+      final id = _stableId('${source.id}|$bookUrl', 0x40000000);
       if (!seen.add(id)) continue;
       final author = _text(row, source.searchAuthorSelector);
       final summary = _text(row, source.searchSummarySelector);
@@ -479,7 +479,7 @@ class BookSourceRepository {
       final chapterUrl = _resolvePage(href);
       final title = _clean(titleNode.text);
       if (title.isEmpty || chapterUrl == null) continue;
-      final id = _stableId('\${source.id}|\${novel.id}|$chapterUrl', 0x20000000);
+      final id = _stableId('${source.id}|${novel.id}|$chapterUrl', 0x20000000);
       if (!seen.add(id)) continue;
       result.add(
         NovelChapter(

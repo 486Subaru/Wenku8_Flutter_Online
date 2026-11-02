@@ -1128,6 +1128,20 @@ class DiscoverPage extends StatelessWidget {
               ),
             )
           : null;
+      final needsSourceLogin = failure is FormatException &&
+          failure.toString().contains('轻之国度') &&
+          (failure.toString().contains('登录') ||
+              failure.toString().contains('凭据'));
+      final sourceLoginAction = needsSourceLogin
+          ? () => unawaited(
+              pushNovelPage<void>(
+                context,
+                BookSourceSettingsPage(reduceMotion: state.reduceMotion),
+                reduceMotion: state.reduceMotion,
+              ),
+            )
+          : null;
+      final primaryAction = sourceLoginAction ?? loginAction;
       body = Column(
         children: [
           Padding(
@@ -1150,8 +1164,10 @@ class DiscoverPage extends StatelessWidget {
                       : '需要连接文库账号'
                   : '书籍加载失败',
               message: feed!.failureMessage,
-              actionLabel: loginAction != null ? '登录 / 官网验证' : '重试',
-              onRetry: loginAction ?? feed!.retry,
+              actionLabel: sourceLoginAction != null
+                  ? '前往书源登录'
+                  : loginAction != null ? '登录 / 官网验证' : '重试',
+              onRetry: primaryAction ?? feed!.retry,
               secondaryAction: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [

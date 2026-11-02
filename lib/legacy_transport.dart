@@ -182,11 +182,13 @@ abstract final class LegacyTransport {
   static Future<bool> openSourceLogin(
     String loginUrl, {
     required String baseUrl,
+    List<String> allowedHosts = const [],
   }) async {
     try {
       return await channel.invokeMethod<bool>('openSourceLogin', {
         'loginUrl': loginUrl,
         'baseUrl': baseUrl,
+        'allowedHosts': allowedHosts,
       }) ?? false;
     } on MissingPluginException {
       throw const OnlineComponentUnavailable();

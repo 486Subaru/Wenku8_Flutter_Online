@@ -18,15 +18,25 @@ void main() {
       expect(missingPage.validate, throwsFormatException);
     });
 
+    test('rejects wildcard login redirect hosts', () {
+      final config = _config(
+        loginUrl: '/login',
+        loginHosts: const ['*.source.example'],
+      );
+      expect(config.validate, throwsFormatException);
+    });
+
     test('round trips its JSON configuration', () {
       final config = _config(
         loginUrl: '/login',
+        loginHosts: const ['auth.source.example'],
         imageHosts: const ['cdn.source.example'],
       );
       final restored = BookSourceConfig.fromJson(Map<String, dynamic>.from(config.toJson()));
       restored.validate();
       expect(restored.id, config.id);
       expect(restored.loginUrl, '/login');
+      expect(restored.loginHosts, ['auth.source.example']);
       expect(restored.imageHosts, ['cdn.source.example']);
     });
   });
@@ -48,6 +58,7 @@ void main() {
 
     final readerSource = await store.installPreset('lightnovel-fun');
     expect(readerSource.supportsReading, isTrue);
+    expect(readerSource.loginHosts, contains('lightnovel.fun'));
     await store.setLoginSourceId(readerSource.id);
     expect(store.homepageSourceId, isNull);
 
@@ -353,6 +364,7 @@ BookSourceConfig _config({
   String chapterItemSelector = '#chapters a',
   String chapterContentSelector = '#content',
   String loginUrl = '',
+  List<String> loginHosts = const [],
   List<String> imageHosts = const [],
   String searchAuthorSelector = '',
   String searchCoverSelector = '',
@@ -367,6 +379,7 @@ BookSourceConfig _config({
   name: 'Test source',
   baseUrl: baseUrl,
   loginUrl: loginUrl,
+  loginHosts: loginHosts,
   searchUrlTemplate: searchUrlTemplate,
   searchItemSelector: searchItemSelector,
   searchTitleSelector: searchTitleSelector,

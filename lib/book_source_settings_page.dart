@@ -243,6 +243,7 @@ class _BookSourceEditorPageState extends State<BookSourceEditorPage> {
       'searchTitleSelector': TextEditingController(text: source?.searchTitleSelector ?? ''),
       'searchLinkSelector': TextEditingController(text: source?.searchLinkSelector ?? ''),
       'searchAuthorSelector': TextEditingController(text: source?.searchAuthorSelector ?? ''),
+      'searchGenreSelector': TextEditingController(text: source?.searchGenreSelector ?? ''),
       'searchSummarySelector': TextEditingController(text: source?.searchSummarySelector ?? ''),
       'searchCoverSelector': TextEditingController(text: source?.searchCoverSelector ?? ''),
       'searchCoverAttribute': TextEditingController(text: source?.searchCoverAttribute ?? 'src'),
@@ -283,6 +284,7 @@ class _BookSourceEditorPageState extends State<BookSourceEditorPage> {
     searchTitleSelector: _value('searchTitleSelector'),
     searchLinkSelector: _value('searchLinkSelector'),
     searchAuthorSelector: _value('searchAuthorSelector'),
+    searchGenreSelector: _value('searchGenreSelector'),
     searchSummarySelector: _value('searchSummarySelector'),
     searchCoverSelector: _value('searchCoverSelector'),
     searchCoverAttribute: _value('searchCoverAttribute').isEmpty
@@ -409,6 +411,7 @@ class _BookSourceEditorPageState extends State<BookSourceEditorPage> {
         _field('searchTitleSelector', '搜索结果标题 CSS', '例如：.book-title a'),
         _field('searchLinkSelector', '搜索结果链接 CSS（可选）', '例如：a.book-link；留空时自动寻找标题链接'),
         _field('searchAuthorSelector', '搜索结果作者 CSS（可选）', '例如：.author'),
+        _field('searchGenreSelector', '搜索结果分类 / 标签 CSS（可选）', '例如：.book-tags'),
         _field('searchSummarySelector', '搜索结果简介 CSS（可选）', '例如：.intro'),
         _field('searchCoverSelector', '搜索结果封面 CSS（可选）', '例如：img.cover'),
         _field('searchCoverAttribute', '搜索结果封面属性', '通常为 src；懒加载图片可填 data-src'),

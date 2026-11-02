@@ -41,6 +41,7 @@ jobs:
               ],
               'lib/wenku8_html_parser.dart': [
                   ("https://www.wenku8.net/", "https://www.wenku8.cc/"),
+                  ("{'www.wenku8.net', 'wenku8.net'}", "{'www.wenku8.cc', 'wenku8.cc'}"),
               ],
               'android/app/src/test/kotlin/org/mewx/wenku8_flutter/Wenku8UrlPolicyTest.kt': [
                   ('www.wenku8.net', 'www.wenku8.cc'),

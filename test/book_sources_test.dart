@@ -77,7 +77,7 @@ void main() {
         expect(baseUrl, config.baseUrl);
         requests.add(url);
         final response = responses[url];
-        if (response == null) throw StateError('Unexpected URL: ' + url);
+        if (response == null) throw StateError('Unexpected URL: $url');
         return response;
       },
     );

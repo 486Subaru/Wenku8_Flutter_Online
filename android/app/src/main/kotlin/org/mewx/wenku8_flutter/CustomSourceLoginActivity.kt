@@ -104,9 +104,17 @@ class CustomSourceLoginActivity : Activity() {
                     view: WebView?,
                     request: WebResourceRequest?,
                 ): Boolean {
-                    val target = request?.url?.toString() ?: return true
-                    if (safePage(target) || Wenku8UrlPolicy.isAllowedChallengeUrl(target)) return false
-                    val blockedHost = request?.url?.host ?: "未知域名"
+                    val navigation = request ?: return true
+                    val target = navigation.url.toString()
+                    if (Wenku8UrlPolicy.shouldAllowSourceWebViewRequest(
+                            target,
+                            base.toString(),
+                            allowedHosts,
+                            navigation.isForMainFrame,
+                        )) return false
+                    // Only top-level redirects need a visible allowlist error.
+                    if (!navigation.isForMainFrame) return true
+                    val blockedHost = navigation.url.host ?: "未知域名"
                     pageError = "已拦截未配置的登录跳转域名：$blockedHost。请在书源设置的“登录跳转域名白名单”中添加该 HTTPS 主机名后重试。"
                     status.text = pageError
                     Toast.makeText(
@@ -190,10 +198,9 @@ class CustomSourceLoginActivity : Activity() {
             val hosts = linkedSetOf(base.host, "www.lightnovel.fun", "lightnovel.fun")
             return hosts.any { host ->
                 val apiUrl = "https://$host/proxy/api/search/search-result"
-                CookieManager.getInstance().getCookie(apiUrl).orEmpty()
-                    .split(';')
-                    .map { it.trim() }
-                    .any { it.startsWith("token=") && it.substringAfter('=').isNotBlank() }
+                LightNovelTokenParser.fromCookieHeader(
+                    CookieManager.getInstance().getCookie(apiUrl),
+                ) != null
             }
         }
         val candidates = listOfNotNull(currentUrl, loginUrl, base.toString()).distinct()

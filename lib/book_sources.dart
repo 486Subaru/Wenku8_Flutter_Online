@@ -373,6 +373,7 @@ class BookSourceStore extends ChangeNotifier {
   static const loginSourcePreferenceKey = 'login_book_source_v1';
   static const loggedInSourcesPreferenceKey = 'logged_in_book_sources_v1';
   static const loginHomepageSeparationMigrationKey = 'login_homepage_separation_v1';
+  static const loginHomepageSyncMigrationKey = 'login_homepage_sync_v1';
   static BookSourceStore? instance;
 
   final SharedPreferences preferences;
@@ -520,8 +521,12 @@ class BookSourceStore extends ChangeNotifier {
         throw const FormatException('该书源没有配置独立登录网址');
       }
       await preferences.setString(loginSourcePreferenceKey, id);
+      if (source.supportsReading) {
+        await preferences.setString(homepageSourcePreferenceKey, id);
+      }
     } else {
       await preferences.remove(loginSourcePreferenceKey);
+      await preferences.remove(homepageSourcePreferenceKey);
     }
     notifyListeners();
   }
@@ -537,12 +542,15 @@ class BookSourceStore extends ChangeNotifier {
     }.toList()..sort();
     await preferences.setStringList(loggedInSourcesPreferenceKey, loggedIn);
     await preferences.setString(loginSourcePreferenceKey, id);
-    // Login identity and homepage catalog are independent settings.
+    if (source.supportsReading) {
+      await preferences.setString(homepageSourcePreferenceKey, id);
+    }
     notifyListeners();
   }
 
   Future<void> completeOfficialLogin() async {
     await preferences.remove(loginSourcePreferenceKey);
+    await preferences.remove(homepageSourcePreferenceKey);
     notifyListeners();
   }
 
@@ -564,12 +572,9 @@ class BookSourceStore extends ChangeNotifier {
     if (preferences.getBool(loginHomepageSeparationMigrationKey) == true) {
       return;
     }
-    // Older builds automatically changed the homepage to Light Novel Kingdom
-    // when its login preset was selected. Restore Wenku8 as the safe default
-    // once; users can still choose Light Novel Kingdom explicitly in settings.
-    if (preferences.getString(homepageSourcePreferenceKey) == 'lightnovel-fun') {
-      await preferences.remove(homepageSourcePreferenceKey);
-    }
+    // Preserve an explicitly selected homepage. A separate migration below
+    // restores the reader-capable login source only when an older build cleared
+    // that preference during login/homepage separation.
     // Older builds marked a source as logged in after detecting any cookie.
     // Reconfirm Light Novel Kingdom with its required token cookie instead.
     final loggedIn = preferences.getStringList(loggedInSourcesPreferenceKey);
@@ -583,6 +588,19 @@ class BookSourceStore extends ChangeNotifier {
   }
 
   Future<void> load() async {
+  Future<void> _migrateLoginHomepageSync() async {
+    if (preferences.getBool(loginHomepageSyncMigrationKey) == true) return;
+    final loginId = preferences.getString(loginSourcePreferenceKey);
+    if (preferences.getString(homepageSourcePreferenceKey) == null && loginId != null) {
+      final source = byId(loginId);
+      if (source != null && source.supportsReading) {
+        await preferences.setString(homepageSourcePreferenceKey, loginId);
+      }
+    }
+    await preferences.setBool(loginHomepageSyncMigrationKey, true);
+  }
+
+
     await _migrateLoginHomepageSeparation();
     _sources.clear();
     final raw = preferences.getString(preferenceKey);
@@ -631,6 +649,7 @@ class BookSourceStore extends ChangeNotifier {
         jsonEncode(_sources.map((source) => source.toJson()).toList()),
       );
     }
+    await _migrateLoginHomepageSync();
     _refreshImageOrigins();
     notifyListeners();
   }

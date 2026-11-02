@@ -43,6 +43,22 @@ internal object Wenku8UrlPolicy {
     fun isAllowedSourceRequest(raw: String, baseUrl: String, requestHosts: List<String>): Boolean =
         isAllowedSourceHttpsUrl(raw, baseUrl, requestHosts)
 
+    /** Allow HTTPS CDN resources while keeping top-level navigation host-scoped. */
+    fun shouldAllowSourceWebViewRequest(
+        raw: String,
+        baseUrl: String,
+        allowedHosts: List<String>,
+        isMainFrame: Boolean,
+    ): Boolean {
+        val uri = parse(raw) ?: return false
+        if (!isMainFrame) {
+            return uri.scheme.equals("https", ignoreCase = true) &&
+                uri.userInfo == null &&
+                (uri.port == -1 || uri.port == 443)
+        }
+        return isAllowedSourcePage(raw, baseUrl, allowedHosts) || isAllowedChallengeUrl(raw)
+    }
+
     fun isOfficialPage(raw: String): Boolean {
         val uri = parse(raw) ?: return false
         return uri.scheme.equals("https", ignoreCase = true) &&

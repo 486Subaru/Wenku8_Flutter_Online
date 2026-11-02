@@ -103,54 +103,84 @@ void main() {
     expect(second.enabledSources, hasLength(1));
   });
 
-  test('login website and homepage source are independent', () async {
+  test('reader-capable login source defaults to homepage while accounts stay isolated', () async {
     SharedPreferences.setMockInitialValues({});
     final preferences = await SharedPreferences.getInstance();
     final store = BookSourceStore(preferences);
     await store.save(_config(loginUrl: '/login'));
-    await store.setHomepageSourceId('test-source');
     await store.installPreset('lightnovel-fun');
 
     await store.setLoginSourceId('lightnovel-fun');
     expect(store.loginSourceId, 'lightnovel-fun');
-    expect(store.homepageSourceId, 'test-source');
+    expect(store.homepageSourceId, 'lightnovel-fun');
     expect(store.isSourceLoggedIn('lightnovel-fun'), isFalse);
 
     await store.completeSourceLogin('lightnovel-fun');
     expect(store.isSourceLoggedIn('lightnovel-fun'), isTrue);
+    expect(store.homepageSourceId, 'lightnovel-fun');
+
+    // A manual homepage choice remains possible after the default sync.
+    await store.setHomepageSourceId('test-source');
     expect(store.homepageSourceId, 'test-source');
 
+    // Switching back to the official Wenku8 login restores the official homepage.
     await store.setLoginSourceId(null);
     expect(store.loginSourceId, isNull);
-    expect(store.homepageSourceId, 'test-source');
+    expect(store.homepageSourceId, isNull);
     expect(store.isSourceLoggedIn('lightnovel-fun'), isTrue);
-
     await store.completeOfficialLogin();
+    expect(store.homepageSourceId, isNull);
+  });
+
+  test('web-login-only source does not replace the readable homepage source', () async {
+    SharedPreferences.setMockInitialValues({});
+    final preferences = await SharedPreferences.getInstance();
+    final store = BookSourceStore(preferences);
+    await store.save(_config());
+    await store.installPreset('linovelib-web');
+    await store.setHomepageSourceId('test-source');
+    await store.setLoginSourceId('linovelib-web');
     expect(store.homepageSourceId, 'test-source');
   });
 
-  test('migrates the old automatic Light Novel Kingdom homepage selection', () async {
+  test('preserves a selected homepage while revalidating old login state', () async {
     SharedPreferences.setMockInitialValues({
       BookSourceStore.preferenceKey: jsonEncode([
         BookSourceStore.builtInPresets.first.toJson(),
       ]),
       BookSourceStore.homepageSourcePreferenceKey: 'lightnovel-fun',
+      BookSourceStore.loginSourcePreferenceKey: 'lightnovel-fun',
       BookSourceStore.loggedInSourcesPreferenceKey: ['lightnovel-fun'],
     });
     final preferences = await SharedPreferences.getInstance();
     final store = BookSourceStore(preferences);
 
     await store.load();
-    expect(store.homepageSourceId, isNull);
+    expect(store.homepageSourceId, 'lightnovel-fun');
     expect(store.isSourceLoggedIn('lightnovel-fun'), isFalse);
     expect(
       preferences.getBool(BookSourceStore.loginHomepageSeparationMigrationKey),
       isTrue,
     );
+  });
 
-    await store.setHomepageSourceId('lightnovel-fun');
+  test('restores a reader-capable login source after the old separation migration', () async {
+    SharedPreferences.setMockInitialValues({
+      BookSourceStore.preferenceKey: jsonEncode([
+        BookSourceStore.builtInPresets.first.toJson(),
+      ]),
+      BookSourceStore.loginSourcePreferenceKey: 'lightnovel-fun',
+      BookSourceStore.loginHomepageSeparationMigrationKey: true,
+    });
+    final preferences = await SharedPreferences.getInstance();
+    final store = BookSourceStore(preferences);
+
     await store.load();
     expect(store.homepageSourceId, 'lightnovel-fun');
+    expect(
+      preferences.getBool(BookSourceStore.loginHomepageSyncMigrationKey),
+      isTrue,
+    );
   });
 
   test('homepage source can be selected independently in settings', () async {

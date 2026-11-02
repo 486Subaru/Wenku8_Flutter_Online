@@ -18,7 +18,6 @@ import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
-import java.net.URLDecoder
 import java.net.UnknownHostException
 import java.net.SocketTimeoutException
 import javax.net.ssl.SSLException
@@ -499,29 +498,12 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
             .filter { it in siteHosts }.distinct()
         for (host in candidates) {
             val cookieUrl = "https://" + host + "/proxy/api/search/search-result"
-            val rawToken = Wenku8SessionCookies.cookieHeader(cookieUrl).orEmpty()
-                .split(';').map { it.trim() }.firstOrNull { it.startsWith("token=") }
-                ?.substringAfter('=').orEmpty()
-            if (rawToken.isBlank()) continue
-            var tokenText = rawToken
-            var securityKey = ""
-            var attempts = 0
-            while (attempts < 3) {
-                val token = runCatching { JSONObject(tokenText) }.getOrNull()
-                if (token != null) {
-                    securityKey = token.optString("security_key")
-                    if (securityKey.isNotBlank()) break
-                }
-                val decoded = runCatching { URLDecoder.decode(tokenText, "UTF-8") }.getOrDefault(tokenText)
-                if (decoded == tokenText) break
-                tokenText = decoded
-                attempts++
-            }
-            if (securityKey.isNotBlank()) {
-                return LightNovelSession(host, securityKey, securityKey.split(':').getOrNull(1).orEmpty())
-            }
+            val credentials = LightNovelTokenParser.fromCookieHeader(
+                Wenku8SessionCookies.cookieHeader(cookieUrl),
+            ) ?: continue
+            return LightNovelSession(host, credentials.securityKey, credentials.uid)
         }
-        throw WebFailure("SOURCE_LOGIN_REQUIRED", "没有读取到轻之国度登录凭据。请在书源卡片点击“独立登录”，确认登录完成后再重试")
+        throw WebFailure("SOURCE_LOGIN_REQUIRED", "没有读取到有效的轻之国度 token 凭据。请在书源卡片点击“独立登录”，完成账号登录后再重试")
     }
 
     private fun lightNovelSearch(rawBaseUrl: String, query: String, page: Int, requestHosts: List<String>): String {

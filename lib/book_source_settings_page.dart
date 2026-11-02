@@ -339,7 +339,7 @@ class BookSourceSettingsPage extends StatelessWidget {
             ],
             const SizedBox(height: 12),
             AppText(
-              '说明：主页书源与账号登录网站独立设置。轻之国度使用专用 API，需登录轻之国度账号；lightnovel.fun 在部分网络环境下可能需要 VPN/代理才能访问。无法连接时可将主页书源切回“轻小说文库（默认）”。其他网站仍需单独适配，Cookie 按网站域名隔离。',
+              '说明：选择支持阅读的登录网站时，默认同步为主页书源；你仍可在上方手动切换主页。轻之国度使用专用 API，需要有效的轻之国度 token；部分网络线路可能无法直连 lightnovel.fun，遇到 DNS 或 HTTPS 连接失败时请检查该域名的网络路由。各网站 Cookie 按域名隔离，不会与轻小说文库账号混用。其他网站仍需单独适配。',
               style: TextStyle(
                 fontSize: 12,
                 height: 1.6,

@@ -53,7 +53,31 @@ class Wenku8UrlPolicyTest {
     }
 
     @Test
-    fun allowsOnlyCloudflareChallengePaths() {
+    fun allowsOnlyCloudflareChallengePaths() {    @Test
+    fun allowsHttpsCdnSubresourcesButRestrictsTopLevelNavigation() {
+        val base = "https://www.lightnovel.fun/"
+        val hosts = listOf("lightnovel.fun")
+        assertTrue(Wenku8UrlPolicy.shouldAllowSourceWebViewRequest(
+            "https://static.lightnovel.fun/assets/app.js", base, hosts, false,
+        ))
+        assertTrue(Wenku8UrlPolicy.shouldAllowSourceWebViewRequest(
+            "https://cdn.example.net/site.css", base, hosts, false,
+        ))
+        assertFalse(Wenku8UrlPolicy.shouldAllowSourceWebViewRequest(
+            "http://cdn.example.net/site.css", base, hosts, false,
+        ))
+        assertTrue(Wenku8UrlPolicy.shouldAllowSourceWebViewRequest(
+            "https://www.lightnovel.fun/login", base, hosts, true,
+        ))
+        assertFalse(Wenku8UrlPolicy.shouldAllowSourceWebViewRequest(
+            "https://auth.lightnovel.fun/login", base, hosts, true,
+        ))
+        assertFalse(Wenku8UrlPolicy.shouldAllowSourceWebViewRequest(
+            "https://evil.example/login", base, hosts, true,
+        ))
+    }
+
+
         assertTrue(
             Wenku8UrlPolicy.isAllowedChallengeUrl(
                 "https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/g/turnstile/if/ov2/av0/rcv",

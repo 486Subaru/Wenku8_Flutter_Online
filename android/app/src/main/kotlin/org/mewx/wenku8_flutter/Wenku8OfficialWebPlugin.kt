@@ -119,7 +119,7 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
                 val baseUrl = call.argument<String>("baseUrl")
                     ?: return result.error("SOURCE_BAD_URL", "缺少轻之国度网站地址", null)
                 val page = call.argument<Int>("page") ?: 1
-                if (query.isEmpty() || query.length > 120 || page !in 1..10000) {
+                if (query.length > 120 || page !in 1..10000) {
                     return result.error("SOURCE_BAD_SEARCH", "轻之国度搜索条件无效", null)
                 }
                 dispatch(result) { lightNovelSearch(baseUrl, query, page) }

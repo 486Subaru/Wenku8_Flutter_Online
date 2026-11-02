@@ -38,6 +38,7 @@ import 'book_grid_density.dart';
 import 'book_categories.dart';
 import 'bookshelf_scope.dart';
 import 'book_source_badge.dart';
+import 'book_source_settings_page.dart';
 import 'book_search.dart';
 import 'blocked_tags_controls.dart';
 import 'catalog.dart';
@@ -3093,6 +3094,19 @@ class SettingsPage extends StatelessWidget {
             code: 'SYSTEM / EFFECTS',
             icon: CupertinoIcons.speedometer,
             options: _effectsOptions,
+          ),
+          const SizedBox(height: 14),
+          FeatureEntry(
+            key: const ValueKey('settings-book-sources'),
+            title: '书源管理',
+            subtitle: '添加其他网站，配置搜索、详情、目录与正文规则',
+            icon: CupertinoIcons.globe,
+            onTap: () => pushNovelPage<void>(
+              context,
+              BookSourceSettingsPage(reduceMotion: state.reduceMotion),
+              reduceMotion: state.reduceMotion,
+              slot: ('settings', 'book-sources'),
+            ),
           ),
           const SizedBox(height: 14),
           if (LanSyncScope.maybeOf(context) case final sync?) ...[

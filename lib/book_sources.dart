@@ -387,13 +387,18 @@ class BookSourceRepository {
     return _request(uri.toString(), baseUrl: source.baseUrl);
   }
 
-  Future<NovelPage> search(String keyword, {int page = 1}) async {
+  Future<NovelPage> search(
+    String keyword, {
+    int page = 1,
+    String field = 'title',
+  }) async {
     if (page < 1 || page > 10000) {
       throw ArgumentError.value(page, 'page');
     }
     final url = source.searchUrlTemplate
         .replaceAll('{keyword}', Uri.encodeQueryComponent(keyword))
-        .replaceAll('{page}', page.toString());
+        .replaceAll('{page}', page.toString())
+        .replaceAll('{field}', field == 'author' ? 'author' : 'title');
     final html = await _fetch(source.baseUri.resolve(url).toString());
     final document = parse(html);
     final rows = document.querySelectorAll(source.searchItemSelector);

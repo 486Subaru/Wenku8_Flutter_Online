@@ -48,7 +48,11 @@ void main() {
     final store = BookSourceStore(preferences);
     final repository = LegacyWenkuRepository(
       bookSources: store,
-      searchRequest: (query, {required field, required page}) async {
+      searchRequest: (
+        String query, {
+        String field = 'articlename',
+        int page = 1,
+      }) async {
         throw StateError('primary site unavailable');
       },
     );

@@ -54,6 +54,50 @@ abstract final class LegacyTransport {
     }
   }
 
+  static Future<String> postSourceJson(
+    String url, {
+    required String baseUrl,
+    required String body,
+  }) async {
+    try {
+      final value = await channel.invokeMethod<String>('postSourceJson', {
+        'url': url,
+        'baseUrl': baseUrl,
+        'body': body,
+      });
+      if (value == null || value.trim().isEmpty) {
+        throw const FormatException('书源 API 返回了空内容');
+      }
+      return value;
+    } on MissingPluginException {
+      throw const OnlineComponentUnavailable();
+    } on PlatformException catch (failure) {
+      throw FormatException(failure.message ?? '书源 API 请求失败，请检查网络');
+    }
+  }
+
+  static Future<String> searchLightNovel(
+    String query, {
+    required String baseUrl,
+    required int page,
+  }) async {
+    try {
+      final value = await channel.invokeMethod<String>('searchLightnovel', {
+        'query': query,
+        'baseUrl': baseUrl,
+        'page': page,
+      });
+      if (value == null || value.trim().isEmpty) {
+        throw const FormatException('轻之国度搜索结果为空');
+      }
+      return value;
+    } on MissingPluginException {
+      throw const OnlineComponentUnavailable();
+    } on PlatformException catch (failure) {
+      throw FormatException(failure.message ?? '轻之国度搜索失败，请先完成独立登录');
+    }
+  }
+
   static Future<Uint8List> getSourceBytes(
     String url, {
     required String baseUrl,

@@ -142,7 +142,6 @@ class Wenku8LoginActivity : Activity() {
         if (::browser.isInitialized) {
             browser.stopLoading()
             browser.webChromeClient = null
-            browser.webViewClient = null
             browser.destroy()
         }
         super.onDestroy()

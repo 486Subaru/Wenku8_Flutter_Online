@@ -88,7 +88,7 @@ class WenkuAccount extends ChangeNotifier {
 
   /// The arguments are retained for compatibility with the existing UI API.
   /// Authentication itself takes place in the official-site WebView.
-  Future<void> login(String username, String password) async {
+  Future<void> login(String _username, String _password) async {
     if (busy) return;
     busy = true;
     operation = '正在打开文库官网';
@@ -116,7 +116,7 @@ class WenkuAccount extends ChangeNotifier {
     }
   }
 
-  Future<void> connectPublications(String password) => login('', '');
+  Future<void> connectPublications(String _password) => login('', '');
 
   Future<void> refreshProfile() => initialize();
 

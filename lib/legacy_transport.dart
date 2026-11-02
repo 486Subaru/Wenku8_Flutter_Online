@@ -36,6 +36,48 @@ abstract final class LegacyTransport {
     }
   }
 
+  static Future<String> getSourceText(
+    String url, {
+    required String baseUrl,
+  }) async {
+    try {
+      final value = await channel.invokeMethod<String>('getSourceText', {
+        'url': url,
+        'baseUrl': baseUrl,
+      });
+      if (value == null || value.trim().isEmpty) {
+        throw const FormatException('书源网站返回了空内容');
+      }
+      return value;
+    } on MissingPluginException {
+      throw const OnlineComponentUnavailable();
+    } on PlatformException catch (failure) {
+      throw FormatException(failure.message ?? '书源网站暂时不可用，请检查网址和网络');
+    }
+  }
+
+  static Future<Uint8List> getSourceBytes(
+    String url, {
+    required String baseUrl,
+    List<String> imageHosts = const [],
+  }) async {
+    try {
+      final value = await channel.invokeMethod<Uint8List>('getSourceBytes', {
+        'url': url,
+        'baseUrl': baseUrl,
+        'imageHosts': imageHosts,
+      });
+      if (value == null || value.isEmpty) {
+        throw const FormatException('书源图片内容为空');
+      }
+      return value;
+    } on MissingPluginException {
+      throw const OnlineComponentUnavailable();
+    } on PlatformException catch (failure) {
+      throw FormatException(failure.message ?? '书源图片暂时不可用');
+    }
+  }
+
   static Future<String> search(
     String query, {
     String field = 'articlename',

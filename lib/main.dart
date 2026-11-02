@@ -14,7 +14,6 @@ import 'app_repository.dart';
 import 'book_sources.dart';
 import 'catalog.dart';
 import 'legacy_wenku_repository.dart';
-import 'legacy_transport.dart';
 import 'library_state.dart';
 import 'local_platform.dart';
 import 'local_series_actions.dart';
@@ -91,10 +90,6 @@ Future<void> main() async {
     // A damaged optional source list must never prevent opening the library.
   }
   BookSourceStore.instance = bookSources;
-  LegacyTransport.configureSourceImageOrigins([
-    for (final source in bookSources.sources)
-      (baseUrl: source.baseUrl, imageHosts: source.imageHosts),
-  ]);
   final remote = LegacyWenkuRepository(bookSources: bookSources);
   final repository = LocalPlatform.fileActions
       ? await openApplicationLibrary(remote: remote, network: network)

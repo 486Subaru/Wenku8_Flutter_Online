@@ -90,6 +90,8 @@ class BookSourceConfig {
   final String chapterContentSelector;
   final List<String> imageHosts;
 
+  bool get supportsReading => engine != 'web_login_only';
+
   Uri get baseUri {
     final uri = Uri.parse(baseUrl.trim());
     return uri.replace(path: uri.path.endsWith('/') ? uri.path : '${uri.path}/');
@@ -156,10 +158,14 @@ class BookSourceConfig {
         throw const FormatException('登录网址必须与书源使用同一个 HTTPS 域名');
       }
     }
-    if (!const {'css', 'lightnovel_fun'}.contains(engine)) {
+    if (!const {'css', 'lightnovel_fun', 'web_login_only'}.contains(engine)) {
       throw const FormatException('不支持的书源解析引擎');
     }
-    if (engine == 'lightnovel_fun') {
+    if (engine == 'web_login_only') {
+      if (loginUrl.trim().isEmpty) {
+        throw const FormatException('网页登录入口必须配置登录网址');
+      }
+    } else if (engine == 'lightnovel_fun') {
       if (uri.host != 'www.lightnovel.fun' || baseUrl.trim() != 'https://www.lightnovel.fun/') {
         throw const FormatException('轻之国度 API 书源必须使用 https://www.lightnovel.fun/');
       }
@@ -313,16 +319,102 @@ class BookSourceStore extends ChangeNotifier {
   final SharedPreferences preferences;
   final List<BookSourceConfig> _sources = [];
   List<BookSourceConfig> get sources => List.unmodifiable(_sources);
-  List<BookSourceConfig> get enabledSources =>
-      List.unmodifiable(_sources.where((source) => source.enabled));
+  List<BookSourceConfig> get enabledSources => List.unmodifiable(
+    _sources.where((source) => source.enabled && source.supportsReading),
+  );
   List<BookSourceConfig> get loginSources => List.unmodifiable(
     _sources.where((source) => source.loginUrl.trim().isNotEmpty),
   );
 
+  /// Built-in site shortcuts. Only the Light Novel Kingdom preset currently
+  /// has a native reader adapter; the others are isolated WebView login entries.
+  static const List<BookSourceConfig> builtInPresets = [
+    BookSourceConfig(
+      id: 'lightnovel-fun',
+      name: '轻之国度',
+      baseUrl: 'https://www.lightnovel.fun/',
+      engine: 'lightnovel_fun',
+      loginUrl: '/',
+      searchUrlTemplate: '',
+      searchItemSelector: '',
+      searchTitleSelector: '',
+      chapterItemSelector: '',
+      chapterContentSelector: '',
+      imageHosts: ['lightnovel.fun'],
+    ),
+    BookSourceConfig(
+      id: 'linovelib-web',
+      name: '哔哩轻小说',
+      baseUrl: 'https://www.linovelib.com/',
+      engine: 'web_login_only',
+      enabled: false,
+      loginUrl: '/login.php',
+      searchUrlTemplate: '',
+      searchItemSelector: '',
+      searchTitleSelector: '',
+      chapterItemSelector: '',
+      chapterContentSelector: '',
+    ),
+    BookSourceConfig(
+      id: 'esjzone-web',
+      name: 'ESJ Zone',
+      baseUrl: 'https://www.esjzone.one/',
+      engine: 'web_login_only',
+      enabled: false,
+      loginUrl: '/my/profile.html',
+      searchUrlTemplate: '',
+      searchItemSelector: '',
+      searchTitleSelector: '',
+      chapterItemSelector: '',
+      chapterContentSelector: '',
+    ),
+    BookSourceConfig(
+      id: 'linovel-net-web',
+      name: '轻之文库',
+      baseUrl: 'https://www.linovel.net/',
+      engine: 'web_login_only',
+      enabled: false,
+      loginUrl: '/auth/login',
+      searchUrlTemplate: '',
+      searchItemSelector: '',
+      searchTitleSelector: '',
+      chapterItemSelector: '',
+      chapterContentSelector: '',
+    ),
+  ];
+
+  List<BookSourceConfig> get loginOptions {
+    final options = <String, BookSourceConfig>{
+      for (final source in loginSources) source.id: source,
+    };
+    for (final preset in builtInPresets) {
+      options.putIfAbsent(preset.id, () => preset);
+    }
+    return List.unmodifiable(options.values);
+  }
+
+  Future<BookSourceConfig> installPreset(String id) async {
+    final existing = byId(id);
+    if (existing != null) return existing;
+    BookSourceConfig? preset;
+    for (final candidate in builtInPresets) {
+      if (candidate.id == id) {
+        preset = candidate;
+        break;
+      }
+    }
+    if (preset == null) {
+      throw const FormatException('找不到这个内置网站预设');
+    }
+    await save(preset);
+    return byId(id)!;
+  }
+
   /// null means the original Wenku8 website; custom IDs select a configured source.
   String? get homepageSourceId {
     final id = preferences.getString(homepageSourcePreferenceKey);
-    return id != null && byId(id) != null ? id : null;
+    final source = id == null ? null : byId(id);
+    return source != null && source.supportsReading ? id : null;
   }
   BookSourceConfig? get homepageSource {
     final id = homepageSourceId;
@@ -346,8 +438,11 @@ class BookSourceStore extends ChangeNotifier {
           .contains(id);
 
   Future<void> setHomepageSourceId(String? id) async {
-    if (id != null && byId(id) == null) {
-      throw const FormatException('请选择已经配置的书源');
+    if (id != null) {
+      final source = byId(id);
+      if (source == null || !source.supportsReading) {
+        throw const FormatException('该网站目前仅支持网页登录，尚不能设为阅读书源');
+      }
     }
     if (id == null) {
       await preferences.remove(homepageSourcePreferenceKey);
@@ -364,8 +459,11 @@ class BookSourceStore extends ChangeNotifier {
         throw const FormatException('该书源没有配置独立登录网址');
       }
       await preferences.setString(loginSourcePreferenceKey, id);
-      // Selecting a login website also makes it the default homepage source.
-      await preferences.setString(homepageSourcePreferenceKey, id);
+      // A native reader source also becomes the homepage source. Browser-only
+      // presets never displace a working reader source.
+      if (source.supportsReading) {
+        await preferences.setString(homepageSourcePreferenceKey, id);
+      }
     } else {
       await preferences.remove(loginSourcePreferenceKey);
       await preferences.remove(homepageSourcePreferenceKey);
@@ -384,8 +482,10 @@ class BookSourceStore extends ChangeNotifier {
     }.toList()..sort();
     await preferences.setStringList(loggedInSourcesPreferenceKey, loggedIn);
     await preferences.setString(loginSourcePreferenceKey, id);
-    // A successful source login becomes the homepage source as requested.
-    await preferences.setString(homepageSourcePreferenceKey, id);
+    // Only a source with a native reader adapter can become the homepage.
+    if (source.supportsReading) {
+      await preferences.setString(homepageSourcePreferenceKey, id);
+    }
     notifyListeners();
   }
 
@@ -508,6 +608,14 @@ class BookSourceRepository {
   final BookSourceJsonRequest _jsonRequest;
   final BookSourceLightNovelSearchRequest _lightNovelSearchRequest;
 
+  void _requireReaderSupport() {
+    if (!source.supportsReading) {
+      throw const FormatException(
+        '该网站目前仅提供网页登录入口，App 内搜索和阅读尚未适配',
+      );
+    }
+  }
+
   Future<String> _fetch(String url) async {
     final uri = _resolvePage(url);
     if (uri == null) throw const FormatException('书源链接超出了配置的网站域名');
@@ -516,6 +624,7 @@ class BookSourceRepository {
 
   Future<NovelPage> search(
     String keyword, {
+    _requireReaderSupport();
     int page = 1,
     String field = 'title',
   }) async {
@@ -582,6 +691,7 @@ class BookSourceRepository {
   }
 
   Future<Novel> detail(Novel seed) async {
+    _requireReaderSupport();
     if (source.engine == 'lightnovel_fun') return _lightNovelDetail(seed);
     final bookUrl = seed.sourceUrl;
     if (bookUrl == null || bookUrl.isEmpty) {
@@ -618,6 +728,7 @@ class BookSourceRepository {
   }
 
   Future<List<NovelChapter>> chapters(Novel novel) async {
+    _requireReaderSupport();
     if (source.engine == 'lightnovel_fun') return _lightNovelChapters(novel);
     final bookUrl = novel.sourceUrl;
     if (bookUrl == null || bookUrl.isEmpty) {
@@ -962,6 +1073,7 @@ class BookSourceRepository {
   }
 
   Future<String> chapterContent(NovelChapter chapter) async {
+    _requireReaderSupport();
     if (source.engine == 'lightnovel_fun') return _lightNovelChapterContent(chapter);
     final url = chapter.sourceUrl;
     if (url == null || url.isEmpty) {

@@ -305,6 +305,9 @@ class BookSourceConfig {
 class BookSourceStore extends ChangeNotifier {
   BookSourceStore(this.preferences);
   static const preferenceKey = 'custom_book_sources_v1';
+  static const homepageSourcePreferenceKey = 'homepage_book_source_v1';
+  static const loginSourcePreferenceKey = 'login_book_source_v1';
+  static const loggedInSourcesPreferenceKey = 'logged_in_book_sources_v1';
   static BookSourceStore? instance;
 
   final SharedPreferences preferences;
@@ -312,6 +315,82 @@ class BookSourceStore extends ChangeNotifier {
   List<BookSourceConfig> get sources => List.unmodifiable(_sources);
   List<BookSourceConfig> get enabledSources =>
       List.unmodifiable(_sources.where((source) => source.enabled));
+  List<BookSourceConfig> get loginSources => List.unmodifiable(
+    _sources.where((source) => source.loginUrl.trim().isNotEmpty),
+  );
+
+  /// null means the original Wenku8 website; custom IDs select a configured source.
+  String? get homepageSourceId {
+    final id = preferences.getString(homepageSourcePreferenceKey);
+    return id != null && byId(id) != null ? id : null;
+  }
+  BookSourceConfig? get homepageSource {
+    final id = homepageSourceId;
+    return id == null ? null : byId(id);
+  }
+
+  /// The account page defaults to Wenku8 and can independently select another
+  /// configured website for its next login.
+  String? get loginSourceId {
+    final id = preferences.getString(loginSourcePreferenceKey);
+    final source = id == null ? null : byId(id);
+    return source != null && source.loginUrl.trim().isNotEmpty ? id : null;
+  }
+  BookSourceConfig? get loginSource {
+    final id = loginSourceId;
+    return id == null ? null : byId(id);
+  }
+
+  bool isSourceLoggedIn(String id) =>
+      (preferences.getStringList(loggedInSourcesPreferenceKey) ?? const [])
+          .contains(id);
+
+  Future<void> setHomepageSourceId(String? id) async {
+    if (id != null && byId(id) == null) {
+      throw const FormatException('请选择已经配置的书源');
+    }
+    if (id == null) {
+      await preferences.remove(homepageSourcePreferenceKey);
+    } else {
+      await preferences.setString(homepageSourcePreferenceKey, id);
+    }
+    notifyListeners();
+  }
+
+  Future<void> setLoginSourceId(String? id) async {
+    if (id != null) {
+      final source = byId(id);
+      if (source == null || source.loginUrl.trim().isEmpty) {
+        throw const FormatException('该书源没有配置独立登录网址');
+      }
+      await preferences.setString(loginSourcePreferenceKey, id);
+    } else {
+      await preferences.remove(loginSourcePreferenceKey);
+    }
+    notifyListeners();
+  }
+
+  Future<void> completeSourceLogin(String id) async {
+    final source = byId(id);
+    if (source == null || source.loginUrl.trim().isEmpty) {
+      throw const FormatException('登录书源已不存在，请重新选择');
+    }
+    final loggedIn = {
+      ...(preferences.getStringList(loggedInSourcesPreferenceKey) ?? const []),
+      id,
+    }.toList()..sort();
+    await preferences.setStringList(loggedInSourcesPreferenceKey, loggedIn);
+    await preferences.setString(loginSourcePreferenceKey, id);
+    // A successful source login becomes the homepage source as requested.
+    await preferences.setString(homepageSourcePreferenceKey, id);
+    notifyListeners();
+  }
+
+  Future<void> completeOfficialLogin() async {
+    await preferences.remove(loginSourcePreferenceKey);
+    await preferences.remove(homepageSourcePreferenceKey);
+    notifyListeners();
+  }
 
   void _refreshImageOrigins() {
     LegacyTransport.configureSourceImageOrigins([
@@ -387,6 +466,19 @@ class BookSourceStore extends ChangeNotifier {
     _sources
       ..clear()
       ..addAll(next);
+    if (preferences.getString(homepageSourcePreferenceKey) == id) {
+      await preferences.remove(homepageSourcePreferenceKey);
+    }
+    if (preferences.getString(loginSourcePreferenceKey) == id) {
+      await preferences.remove(loginSourcePreferenceKey);
+    }
+    final loggedIn = preferences
+        .getStringList(loggedInSourcesPreferenceKey)
+        ?.where((sourceId) => sourceId != id)
+        .toList();
+    if (loggedIn != null) {
+      await preferences.setStringList(loggedInSourcesPreferenceKey, loggedIn);
+    }
     _refreshImageOrigins();
     notifyListeners();
   }

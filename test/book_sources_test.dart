@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:wenku8_flutter/book_sources.dart';
 
@@ -25,6 +26,18 @@ void main() {
       expect(restored.loginUrl, '/login');
       expect(restored.imageHosts, ['cdn.source.example']);
     });
+  });
+
+  test('persists custom source configurations across app starts', () async {
+    SharedPreferences.setMockInitialValues({});
+    final preferences = await SharedPreferences.getInstance();
+    final first = BookSourceStore(preferences);
+    await first.save(_config());
+    final second = BookSourceStore(preferences);
+    await second.load();
+    expect(second.sources, hasLength(1));
+    expect(second.sources.single.id, 'test-source');
+    expect(second.enabledSources, hasLength(1));
   });
 
   test('parses search, detail, table of contents and chapter images', () async {

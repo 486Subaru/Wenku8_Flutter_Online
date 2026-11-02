@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:wenku8_flutter/book_search.dart';
+import 'package:wenku8_flutter/legacy_wenku_repository.dart';
 
 import 'package:wenku8_flutter/book_sources.dart';
 
@@ -38,6 +40,22 @@ void main() {
     expect(second.sources, hasLength(1));
     expect(second.sources.single.id, 'test-source');
     expect(second.enabledSources, hasLength(1));
+  });
+
+  test('keeps search usable when the primary Wenku8 site is unavailable', () async {
+    SharedPreferences.setMockInitialValues({});
+    final preferences = await SharedPreferences.getInstance();
+    final store = BookSourceStore(preferences);
+    final repository = LegacyWenkuRepository(
+      bookSources: store,
+      searchRequest: (query, {required field, required page}) async {
+        throw StateError('primary site unavailable');
+      },
+    );
+
+    final result = await repository.searchFilteredPage('Novel');
+    expect(result.items, isEmpty);
+    expect(result.searchFailures, contains(BookSearchField.all));
   });
 
   test('parses search, detail, table of contents and chapter images', () async {

@@ -42,6 +42,39 @@ void main() {
     expect(second.enabledSources, hasLength(1));
   });
 
+  test('selecting a login website also selects it as homepage source', () async {
+    SharedPreferences.setMockInitialValues({});
+    final preferences = await SharedPreferences.getInstance();
+    final store = BookSourceStore(preferences);
+    await store.save(_config(loginUrl: '/login'));
+
+    await store.setLoginSourceId('test-source');
+    expect(store.loginSourceId, 'test-source');
+    expect(store.homepageSourceId, 'test-source');
+    expect(store.isSourceLoggedIn('test-source'), isFalse);
+
+    await store.completeSourceLogin('test-source');
+    expect(store.isSourceLoggedIn('test-source'), isTrue);
+    expect(store.homepageSourceId, 'test-source');
+
+    await store.setLoginSourceId(null);
+    expect(store.loginSourceId, isNull);
+    expect(store.homepageSourceId, isNull);
+    expect(store.isSourceLoggedIn('test-source'), isTrue);
+  });
+
+  test('homepage source can be selected independently in settings', () async {
+    SharedPreferences.setMockInitialValues({});
+    final preferences = await SharedPreferences.getInstance();
+    final store = BookSourceStore(preferences);
+    await store.save(_config());
+
+    await store.setHomepageSourceId('test-source');
+    expect(store.homepageSource?.id, 'test-source');
+    await store.setHomepageSourceId(null);
+    expect(store.homepageSourceId, isNull);
+  });
+
   test('keeps search usable when the primary Wenku8 site is unavailable', () async {
     SharedPreferences.setMockInitialValues({});
     final preferences = await SharedPreferences.getInstance();

@@ -1,13 +1,34 @@
 import 'dart:async';
-
 import 'dart:typed_data';
-import 'online_component.dart';
 
-/// Bounded cover cache. Source previews use local seeds only.
+import 'legacy_transport.dart';
+
+/// Bounded cover cache. The official page supplies the exact category URL;
+/// keeping that URL here avoids guessing a book's image shard.
 abstract final class LegacyCover {
-  static final _cache = LegacyCoverCache(request: (_) => unavailableOnline());
-  static Uint8List? peek(int aid, {String? url}) => _cache.peek(aid);
-  static Future<Uint8List> bytes(int aid, {String? url}) => _cache.load(aid);
+  static final _urls = <int, String>{};
+  static final _cache = LegacyCoverCache(
+    request: (aid) async {
+      final url = _urls[aid];
+      if (url == null || url.isEmpty) {
+        throw const FormatException('缺少这本书的封面地址');
+      }
+      return LegacyTransport.getBytes(
+        url,
+        referer: 'https://www.wenku8.net/index.php',
+      );
+    },
+  );
+
+  static Uint8List? peek(int aid, {String? url}) {
+    if (url != null && url.isNotEmpty) _urls[aid] = url;
+    return _cache.peek(aid);
+  }
+
+  static Future<Uint8List> bytes(int aid, {String? url}) {
+    if (url != null && url.isNotEmpty) _urls[aid] = url;
+    return _cache.load(aid);
+  }
 
   /// Explicit local fixtures never query a remote cover endpoint.
   static void seedLocalBytes(int aid, Uint8List bytes) =>

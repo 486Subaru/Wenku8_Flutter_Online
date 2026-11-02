@@ -39,7 +39,7 @@ class BookSourceSettingsPage extends StatelessWidget {
         showNovelFeedback(
           context,
           accepted
-              ? '已完成 \${source.name} 登录，主页书源已切换'
+              ? '已完成 ${source.name} 登录，主页书源已切换'
               : '尚未确认登录，请在网站页面完成登录后点击“完成登录”',
         );
       }
@@ -134,7 +134,7 @@ class BookSourceSettingsPage extends StatelessWidget {
       final name = selected == official
           ? '轻小说文库（默认）'
           : store.byId(selected)?.name ?? '所选书源';
-      showNovelFeedback(context, '主页书源已切换为 \${name}');
+      showNovelFeedback(context, '主页书源已切换为 ${name}');
     }
   }
 

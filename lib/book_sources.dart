@@ -499,7 +499,7 @@ class BookSourceRepository {
     if (root == null) {
       throw const FormatException('没有找到正文区域，请检查正文 CSS 选择器');
     }
-    final text = root.nodes.map(_flatten).join();
+    final text = root.nodes.map(_flattenSourceNode).join();
     final normalized = text
         .replaceAll('\r\n', '\n')
         .replaceAll('\r', '\n')
@@ -510,6 +510,58 @@ class BookSourceRepository {
         .trim();
     if (normalized.isEmpty) throw const FormatException('章节正文为空');
     return normalized;
+  }
+
+  String _flattenSourceNode(Node node) {
+    if (node is Text) return node.text;
+    if (node is! Element) return '';
+    final tag = node.localName;
+    if (tag == 'img') {
+      final raw = node.attributes['src'] ??
+          node.attributes['data-src'] ??
+          node.attributes['data-original'] ??
+          '';
+      final image = _resolveImage(raw);
+      return image == null
+          ? ''
+          : '\n\n<!--image-->' + image.toString() + '<!--image-->\n\n';
+    }
+    if (const {
+      'script',
+      'style',
+      'noscript',
+      'iframe',
+      'form',
+      'nav',
+      'header',
+      'footer',
+      'button',
+      'svg',
+      'ul',
+      'ol',
+    }.contains(tag)) {
+      return '';
+    }
+    if (tag == 'br') return '\n';
+    final content = node.nodes.map(_flattenSourceNode).join();
+    if (const {
+      'p',
+      'div',
+      'section',
+      'article',
+      'li',
+      'tr',
+      'td',
+      'blockquote',
+      'h1',
+      'h2',
+      'h3',
+      'h4',
+      'hr',
+    }.contains(tag)) {
+      return '\n\n' + content + '\n\n';
+    }
+    return content;
   }
 
   Uri? _resolvePage(String raw) {
@@ -605,47 +657,4 @@ List<Color> _colors(int id) {
     [Color(0xFF887EB0), Color(0xFF39345F)],
   ];
   return palettes[id % palettes.length];
-}
-
-String _flatten(Node node) {
-  if (node is Text) return node.text;
-  if (node is! Element) return '';
-  final tag = node.localName;
-  if (const {
-    'script',
-    'style',
-    'noscript',
-    'iframe',
-    'form',
-    'nav',
-    'header',
-    'footer',
-    'button',
-    'img',
-    'svg',
-    'ul',
-    'ol',
-  }.contains(tag)) {
-    return '';
-  }
-  if (tag == 'br') return '\n';
-  final content = node.nodes.map(_flatten).join();
-  if (const {
-    'p',
-    'div',
-    'section',
-    'article',
-    'li',
-    'tr',
-    'td',
-    'blockquote',
-    'h1',
-    'h2',
-    'h3',
-    'h4',
-    'hr',
-  }.contains(tag)) {
-    return '\n\n$content\n\n';
-  }
-  return content;
 }

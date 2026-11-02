@@ -70,7 +70,7 @@ abstract final class Wenku8HtmlParser {
     return NovelPage(
       items: List.unmodifiable(items),
       page: page,
-      totalPages: pages ?? (items.isEmpty ? 0 : page),
+      totalPages: pages,
     );
   }
 
@@ -415,7 +415,11 @@ abstract final class Wenku8HtmlParser {
   static Uri? _resolvePage(String raw) {
     final uri = Uri.tryParse(raw.trim());
     if (uri == null) return null;
-    final resolved = uri.hasScheme ? uri : Uri.parse(base).resolveUri(uri);
+    var resolved = uri.hasScheme ? uri : Uri.parse(base).resolveUri(uri);
+    if (resolved.scheme == 'http' &&
+        const {'www.wenku8.net', 'wenku8.net'}.contains(resolved.host)) {
+      resolved = resolved.replace(scheme: 'https', port: 443);
+    }
     if (resolved.scheme != 'https' ||
         !const {'www.wenku8.net', 'wenku8.net'}.contains(resolved.host) ||
         resolved.userInfo.isNotEmpty ||

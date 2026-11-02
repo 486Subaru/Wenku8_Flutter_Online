@@ -408,6 +408,9 @@ class OfflineNovelRepository extends FrameChangeNotifier
         saved.summary == novel.summary &&
         saved.genre == novel.genre &&
         saved.coverUrl == novel.coverUrl &&
+        saved.sourceId == novel.sourceId &&
+        saved.sourceUrl == novel.sourceUrl &&
+        saved.sourceBaseUrl == novel.sourceBaseUrl &&
         saved.isComplete == novel.isComplete &&
         saved.lastUpdate == novel.lastUpdate &&
         _sameDirectory(saved.chapters, novel.chapters)) {
@@ -423,7 +426,9 @@ class OfflineNovelRepository extends FrameChangeNotifier
       if (a[index].id != b[index].id ||
           a[index].title != b[index].title ||
           a[index].volumeId != b[index].volumeId ||
-          a[index].volumeTitle != b[index].volumeTitle) {
+          a[index].volumeTitle != b[index].volumeTitle ||
+          a[index].sourceId != b[index].sourceId ||
+          a[index].sourceUrl != b[index].sourceUrl) {
         return false;
       }
     }

@@ -398,7 +398,7 @@ abstract final class Wenku8HtmlParser {
     if (uri == null) return null;
     var resolved = uri.hasScheme ? uri : baseUri.resolveUri(uri);
     if (resolved.scheme == 'http' && _imageHosts.contains(resolved.host)) {
-      resolved = resolved.replace(scheme: 'https', port: 443);
+      resolved = resolved.replace(scheme: 'https', port: null);
     }
     if (resolved.scheme != 'https' ||
         !_imageHosts.contains(resolved.host) ||

@@ -115,6 +115,8 @@ class BookSourceConfig {
 
   void validate() {
     if (!RegExp(r'^[A-Za-z0-9_-]{1,80}
+      throw const FormatException('书源标识无效');
+    }
     if (name.trim().isEmpty || name.trim().length > 40) {
       throw const FormatException('请填写 1–40 个字符的网站名称');
     }

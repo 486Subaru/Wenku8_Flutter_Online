@@ -50,12 +50,6 @@ abstract final class Wenku8HtmlParser {
       final name = _oneLine(anchor.text);
       if (id != null && id > 0 && name.isNotEmpty) found[id] = name;
     }
-    if (found.length == 1) {
-      found
-        ..[1] = '电击文库'
-        ..[2] = '富士见文库'
-        ..[14] = '角川文库';
-    }
     final entries = found.entries.toList()
       ..sort((a, b) => a.key.compareTo(b.key));
     return List.unmodifiable([
@@ -80,9 +74,13 @@ abstract final class Wenku8HtmlParser {
     final books = <Novel>[];
     for (final anchor in document.querySelectorAll('a[href]')) {
       final id = _bookId(anchor.attributes['href']);
-      if (id == null || !seen.add(id)) continue;
+      if (id == null) continue;
+      // A live entry links to the same book twice: the first link wraps only
+      // the cover and has no visible text. Do not mark its ID as seen until
+      // the titled link is reached.
       final title = _cleanTitle(anchor.text);
-      if (title.isEmpty) continue;
+      if (title.isEmpty || seen.contains(id)) continue;
+      seen.add(id);
       final entry = _entryFor(anchor);
       final text = _oneLine(entry.text);
       final author = _capture(
@@ -199,8 +197,14 @@ abstract final class Wenku8HtmlParser {
     final seen = <int>{};
     var volumeId = 0;
     var volumeTitle = '';
-    final table = document.querySelector('table.css') ??
-        document.querySelector('table');
+    final tables = document.querySelectorAll('table');
+    final table = tables.firstWhere(
+      (candidate) => candidate.querySelector('td.ccss a[href]') != null,
+      orElse: () => tables.firstWhere(
+        (candidate) => candidate.querySelector('a[href]') != null,
+        orElse: () => document.createElement('table'),
+      ),
+    );
     if (table != null) {
       for (final row in table.querySelectorAll('tr')) {
         final volume = row.querySelector('td.vcss');
@@ -328,20 +332,23 @@ abstract final class Wenku8HtmlParser {
 
   static Element _entryFor(Element anchor) {
     Element current = anchor;
-    for (var depth = 0; depth < 5; depth++) {
+    Element? textFallback;
+    for (var depth = 0; depth < 7; depth++) {
       final parent = current.parentNode;
       if (parent is! Element) break;
       current = parent;
       final tag = current.localName;
-      if ((tag == 'div' || tag == 'td' || tag == 'li') &&
-          (current.querySelector('img') != null ||
-              current.text.trim().length > anchor.text.trim().length + 12)) {
-        return current;
+      if (tag != 'div' && tag != 'td' && tag != 'li') continue;
+      if (textFallback == null &&
+          current.text.trim().length > anchor.text.trim().length + 12) {
+        textFallback = current;
       }
+      // Prefer the nearest ancestor that contains both the title and cover.
+      // The immediately enclosing info div often has author text but no image.
+      if (current.querySelector('img') != null) return current;
     }
-    return anchor.parentNode is Element
-        ? anchor.parentNode as Element
-        : anchor;
+    return textFallback ??
+        (anchor.parentNode is Element ? anchor.parentNode as Element : anchor);
   }
 
   static String? _detailCover(Element root) {
@@ -353,7 +360,16 @@ abstract final class Wenku8HtmlParser {
   }
 
   static String? _coverFromEntry(Element entry, int id) {
-    for (final image in entry.querySelectorAll('img[src]')) {
+    final images = entry.querySelectorAll('img[src]');
+    for (final image in images) {
+      final parent = image.parentNode;
+      if (parent is Element &&
+          _bookId(parent.attributes['href']) == id) {
+        final url = _absoluteImageUrl(image.attributes['src'], Uri.parse(base));
+        if (url != null) return url;
+      }
+    }
+    for (final image in images) {
       final url = _absoluteImageUrl(image.attributes['src'], Uri.parse(base));
       if (url != null) return url;
     }
@@ -458,7 +474,7 @@ abstract final class Wenku8HtmlParser {
   }
 
   static String _cleanTitle(String raw) {
-    var title = _oneLine(raw);
+    var title = _oneLine(raw).split('小说在线阅读').first;
     if (title.contains('《') && title.contains('》')) {
       title = title.substring(title.indexOf('《') + 1, title.indexOf('》'));
     }

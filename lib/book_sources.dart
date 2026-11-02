@@ -364,8 +364,11 @@ class BookSourceStore extends ChangeNotifier {
         throw const FormatException('该书源没有配置独立登录网址');
       }
       await preferences.setString(loginSourcePreferenceKey, id);
+      // Selecting a login website also makes it the default homepage source.
+      await preferences.setString(homepageSourcePreferenceKey, id);
     } else {
       await preferences.remove(loginSourcePreferenceKey);
+      await preferences.remove(homepageSourcePreferenceKey);
     }
     notifyListeners();
   }

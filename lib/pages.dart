@@ -3945,6 +3945,23 @@ class InlineSearchResults extends StatelessWidget {
 
   Widget _buildResults(BuildContext context) {
     final books = feed.items;
+    final failure = feed.error;
+    final needsLogin = failure is OnlineAuthenticationRequired ||
+        failure is OnlineChallengeRequired;
+    final features = WenkuFeaturesScope.maybeOf(context);
+    final VoidCallback? loginAction = features == null
+        ? null
+        : () => unawaited(
+            pushNovelPage<void>(
+              context,
+              WenkuAccountPage(
+                account: features.account,
+                state: state,
+                repository: repository,
+              ),
+              reduceMotion: state.reduceMotion,
+            ),
+          );
     if (books.isEmpty &&
         feed.query.isEmpty &&
         onRecall != null &&
@@ -3963,12 +3980,8 @@ class InlineSearchResults extends StatelessWidget {
               padding: EdgeInsets.only(top: 24),
               child: BookCollectionSkeleton(rows: 2),
             )
-          else if (feed.error != null) {
-            final failure = feed.error;
-            final needsLogin = failure is OnlineAuthenticationRequired ||
-                failure is OnlineChallengeRequired;
-            final features = WenkuFeaturesScope.maybeOf(context);
-            return Column(
+          else if (feed.error != null)
+            Column(
               children: [
                 AppText(
                   needsLogin
@@ -3976,24 +3989,15 @@ class InlineSearchResults extends StatelessWidget {
                       : '推荐载入失败，仍可搜索书名或作者',
                 ),
                 GlassTextButton(
-                  onPressed: needsLogin && features != null
-                      ? () => unawaited(
-                          pushNovelPage<void>(
-                            context,
-                            WenkuAccountPage(
-                              account: features.account,
-                              state: state,
-                              repository: repository,
-                            ),
-                            reduceMotion: state.reduceMotion,
-                          ),
-                        )
+                  onPressed: needsLogin && loginAction != null
+                      ? loginAction
                       : feed.retry,
-                  child: AppText(needsLogin ? '登录 / 官网验证' : '重试'),
+                  child: AppText(needsLogin && loginAction != null
+                      ? '登录 / 官网验证'
+                      : '重试'),
                 ),
               ],
-            );
-          }
+            )
       else
             const AppText('搜索书名或作者，开始寻找故事。'),
         ],
@@ -4003,23 +4007,6 @@ class InlineSearchResults extends StatelessWidget {
       return SearchSkeleton(status: feed.tagProgressLabel);
     }
     if (books.isEmpty && feed.error != null) {
-      final failure = feed.error;
-      final needsLogin = failure is OnlineAuthenticationRequired ||
-          failure is OnlineChallengeRequired;
-      final features = WenkuFeaturesScope.maybeOf(context);
-      final loginAction = features == null
-          ? null
-          : () => unawaited(
-              pushNovelPage<void>(
-                context,
-                WenkuAccountPage(
-                  account: features.account,
-                  state: state,
-                  repository: repository,
-                ),
-                reduceMotion: state.reduceMotion,
-              ),
-            );
       return ContentNotice(
         icon: CupertinoIcons.wifi_exclamationmark,
         title: needsLogin

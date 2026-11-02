@@ -13,6 +13,18 @@ typedef BookSourceTextRequest = Future<String> Function(
   required String baseUrl,
 });
 
+typedef BookSourceJsonRequest = Future<String> Function(
+  String url, {
+  required String baseUrl,
+  required String body,
+});
+
+typedef BookSourceLightNovelSearchRequest = Future<String> Function(
+  String query, {
+  required String baseUrl,
+  required int page,
+});
+
 class BookSourceConfig {
   const BookSourceConfig({
     required this.id,
@@ -23,6 +35,7 @@ class BookSourceConfig {
     required this.searchTitleSelector,
     required this.chapterItemSelector,
     required this.chapterContentSelector,
+    this.engine = 'css',
     this.enabled = true,
     this.loginUrl = '',
     this.searchLinkSelector = '',
@@ -48,6 +61,7 @@ class BookSourceConfig {
 
   final String id;
   final String name;
+  final String engine;
   final String baseUrl;
   final bool enabled;
   final String loginUrl;
@@ -86,6 +100,7 @@ class BookSourceConfig {
     name: name,
     baseUrl: baseUrl,
     enabled: value,
+    engine: engine,
     loginUrl: loginUrl,
     searchUrlTemplate: searchUrlTemplate,
     searchItemSelector: searchItemSelector,
@@ -141,16 +156,25 @@ class BookSourceConfig {
         throw const FormatException('登录网址必须与书源使用同一个 HTTPS 域名');
       }
     }
-    if (!searchUrlTemplate.contains('{keyword}') ||
-        !searchUrlTemplate.contains('{page}') ||
-        searchUrlTemplate.length > 2048) {
-      throw const FormatException('搜索地址必须包含 {keyword} 和 {page}');
+    if (!const {'css', 'lightnovel_fun'}.contains(engine)) {
+      throw const FormatException('不支持的书源解析引擎');
     }
-    if (searchItemSelector.trim().isEmpty ||
-        searchTitleSelector.trim().isEmpty ||
-        chapterItemSelector.trim().isEmpty ||
-        chapterContentSelector.trim().isEmpty) {
-      throw const FormatException('搜索结果、标题、目录和正文 CSS 选择器不能为空');
+    if (engine == 'lightnovel_fun') {
+      if (uri.host != 'www.lightnovel.fun' || baseUrl.trim() != 'https://www.lightnovel.fun/') {
+        throw const FormatException('轻之国度 API 书源必须使用 https://www.lightnovel.fun/');
+      }
+    } else {
+      if (!searchUrlTemplate.contains('{keyword}') ||
+          !searchUrlTemplate.contains('{page}') ||
+          searchUrlTemplate.length > 2048) {
+        throw const FormatException('搜索地址必须包含 {keyword} 和 {page}');
+      }
+      if (searchItemSelector.trim().isEmpty ||
+          searchTitleSelector.trim().isEmpty ||
+          chapterItemSelector.trim().isEmpty ||
+          chapterContentSelector.trim().isEmpty) {
+        throw const FormatException('搜索结果、标题、目录和正文 CSS 选择器不能为空');
+      }
     }
     final selectors = [
       searchItemSelector,
@@ -203,6 +227,7 @@ class BookSourceConfig {
   Map<String, Object?> toJson() => {
     'id': id,
     'name': name,
+    'engine': engine,
     'baseUrl': baseUrl.trim(),
     'enabled': enabled,
     'loginUrl': loginUrl,
@@ -238,6 +263,7 @@ class BookSourceConfig {
     return BookSourceConfig(
       id: string('id'),
       name: string('name'),
+      engine: string('engine', 'css'),
       baseUrl: string('baseUrl'),
       enabled: value['enabled'] != false,
       loginUrl: string('loginUrl'),
@@ -376,10 +402,16 @@ class BookSourceRepository {
   BookSourceRepository(
     this.source, {
     BookSourceTextRequest? request,
-  }) : _request = request ?? LegacyTransport.getSourceText;
+    BookSourceJsonRequest? jsonRequest,
+    BookSourceLightNovelSearchRequest? lightNovelSearchRequest,
+  }) : _request = request ?? LegacyTransport.getSourceText,
+       _jsonRequest = jsonRequest ?? LegacyTransport.postSourceJson,
+       _lightNovelSearchRequest = lightNovelSearchRequest ?? LegacyTransport.searchLightNovel;
 
   final BookSourceConfig source;
   final BookSourceTextRequest _request;
+  final BookSourceJsonRequest _jsonRequest;
+  final BookSourceLightNovelSearchRequest _lightNovelSearchRequest;
 
   Future<String> _fetch(String url) async {
     final uri = _resolvePage(url);
@@ -394,6 +426,9 @@ class BookSourceRepository {
   }) async {
     if (page < 1 || page > 10000) {
       throw ArgumentError.value(page, 'page');
+    }
+    if (source.engine == 'lightnovel_fun') {
+      return _searchLightNovel(keyword, page: page);
     }
     final url = source.searchUrlTemplate
         .replaceAll('{keyword}', Uri.encodeQueryComponent(keyword))
@@ -452,6 +487,7 @@ class BookSourceRepository {
   }
 
   Future<Novel> detail(Novel seed) async {
+    if (source.engine == 'lightnovel_fun') return _lightNovelDetail(seed);
     final bookUrl = seed.sourceUrl;
     if (bookUrl == null || bookUrl.isEmpty) {
       throw const FormatException('这本书缺少原始网站地址');
@@ -487,6 +523,7 @@ class BookSourceRepository {
   }
 
   Future<List<NovelChapter>> chapters(Novel novel) async {
+    if (source.engine == 'lightnovel_fun') return _lightNovelChapters(novel);
     final bookUrl = novel.sourceUrl;
     if (bookUrl == null || bookUrl.isEmpty) {
       throw const FormatException('这本书缺少原始网站地址');
@@ -544,7 +581,293 @@ class BookSourceRepository {
     return List.unmodifiable(result);
   }
 
+
+  Future<Map<String, dynamic>> _lightNovelApi(
+    String path,
+    Map<String, Object?> body,
+  ) async {
+    final url = _resolvePage(
+      source.baseUri.resolve('/api/pc-proxy/api/$path').toString(),
+    );
+    if (url == null) {
+      throw const FormatException('轻之国度 API 地址不在书源域名内');
+    }
+    final raw = await _jsonRequest(
+      url.toString(),
+      baseUrl: source.baseUrl,
+      body: jsonEncode(body),
+    );
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('轻之国度 API 返回格式无效');
+    }
+    final code = decoded['code'];
+    if (code != null && code.toString() != '0') {
+      final message = decoded['message'] ?? decoded['msg'] ?? decoded['error'];
+      throw FormatException(
+        '轻之国度接口返回错误 ' + code.toString() +
+        (message == null ? '' : '：' + _clean(message.toString())),
+      );
+    }
+    final data = decoded['data'];
+    if (data is Map<String, dynamic>) return data;
+    if (data is List) return {'list': data};
+    throw const FormatException('轻之国度 API 没有返回数据');
+  }
+
+  Future<List<Map<String, dynamic>>> _lightNovelPaged(
+    String path,
+    Map<String, Object?> parameters,
+    String idKey,
+  ) async {
+    final result = <Map<String, dynamic>>[];
+    final seen = <String>{};
+    for (var page = 1; page <= 20; page++) {
+      final data = await _lightNovelApi(path, {
+        ...parameters,
+        'page': page,
+        'pageSize': 50,
+      });
+      final rawItems = data['list'];
+      final items = rawItems is List
+          ? rawItems.whereType<Map>().map((item) => Map<String, dynamic>.from(item)).toList()
+          : <Map<String, dynamic>>[];
+      for (final item in items) {
+        final id = item[idKey]?.toString().trim() ?? '';
+        if (id.isNotEmpty && seen.add(id)) result.add(item);
+      }
+      final pagination = data['pagination'] is Map
+          ? Map<String, dynamic>.from(data['pagination'] as Map)
+          : data['page_info'] is Map
+              ? Map<String, dynamic>.from(data['page_info'] as Map)
+              : <String, dynamic>{};
+      final pageCount = int.tryParse(
+            (pagination['page_count'] ?? pagination['pageCount'] ?? '').toString(),
+          ) ??
+          0;
+      final total = int.tryParse((pagination['total'] ?? '').toString()) ?? 0;
+      if (items.isEmpty ||
+          items.length < 50 ||
+          (pageCount > 0 && page >= pageCount) ||
+          (total > 0 && result.length >= total)) {
+        break;
+      }
+    }
+    return result;
+  }
+
+  int? _lightNovelBookId(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    final uri = Uri.tryParse(raw);
+    if (uri == null || uri.host != source.baseUri.host) return null;
+    final match = RegExp(r'/(?:book|reader)/(\d+)').firstMatch(uri.path);
+    return match == null ? null : int.tryParse(match.group(1)!);
+  }
+
+  Future<NovelPage> _searchLightNovel(String keyword, {required int page}) async {
+    final raw = await _lightNovelSearchRequest(
+      keyword,
+      baseUrl: source.baseUrl,
+      page: page,
+    );
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('轻之国度搜索接口返回格式无效');
+    }
+    final data = decoded['data'];
+    if (data is! Map) {
+      throw const FormatException('轻之国度搜索结果中没有 data 字段');
+    }
+    final rows = <Map<String, dynamic>>[];
+    for (final key in const ['collections', 'articles']) {
+      final values = data[key];
+      if (values is List) {
+        rows.addAll(values.whereType<Map>().map((item) => Map<String, dynamic>.from(item)));
+      }
+    }
+    final books = <Novel>[];
+    final seen = <int>{};
+    for (final row in rows.take(100)) {
+      final directId = int.tryParse((row['book_id'] ?? row['bookId'] ?? '').toString());
+      final seriesId = int.tryParse((row['sid'] ?? '').toString()) ?? 0;
+      final articleId = int.tryParse((row['aid'] ?? '').toString()) ?? 0;
+      final bookId = directId ?? (seriesId > 0 ? seriesId : articleId);
+      final title = _clean(
+        (row['title'] ?? row['name'] ?? row['series_name'] ?? '').toString(),
+      );
+      if (bookId == null || bookId <= 0 || title.isEmpty) continue;
+      final id = _stableId(source.id + '|' + bookId.toString(), 0x40000000);
+      if (!seen.add(id)) continue;
+      final cover = (row['cover'] ?? row['cover_url'] ?? '').toString();
+      books.add(
+        Novel(
+          id: id,
+          title: title,
+          author: _clean((row['author'] ?? row['author_name'] ?? '').toString()),
+          genre: _clean((row['group_name'] ?? row['kind'] ?? '').toString()),
+          summary: _clean((row['summary'] ?? row['intro'] ?? '').toString()),
+          colors: _colors(id),
+          coverUrl: _resolveImage(cover)?.toString(),
+          sourceId: source.id,
+          sourceName: source.name,
+          sourceUrl: source.baseUri.resolve('/book/$bookId').toString(),
+          sourceBaseUrl: source.baseUrl,
+          sourceImageHosts: source.imageHosts,
+        ),
+      );
+    }
+    return NovelPage(items: List.unmodifiable(books), page: page);
+  }
+
+  Future<Novel> _lightNovelDetail(Novel seed) async {
+    final bookId = _lightNovelBookId(seed.sourceUrl);
+    if (bookId == null) throw const FormatException('无法从轻之国度书籍链接识别书号');
+    final data = await _lightNovelApi(
+      'new-content-read/get-book-detail',
+      {'book_id': bookId, 'with_volumes': 0},
+    );
+    final tagsRaw = (data['visible_tags'] is List && (data['visible_tags'] as List).isNotEmpty)
+        ? data['visible_tags'] as List
+        : data['tags'] is List ? data['tags'] as List : const [];
+    final tags = tagsRaw.map((tag) {
+      if (tag is Map) return _clean((tag['name'] ?? tag['text'] ?? '').toString());
+      return _clean(tag.toString());
+    }).where((tag) => tag.isNotEmpty).toSet().toList();
+    final workType = data['work_type'];
+    final workTypeText = workType is Map ? (workType['text'] ?? '').toString() : '';
+    final status = _clean(
+      (data['status'] ?? data['serial_status'] ?? data['update_status'] ?? '').toString(),
+    );
+    final completed = data['is_complete'] == true ||
+        data['is_finished'] == true ||
+        status.contains('完结') ||
+        status.contains('完本') ||
+        status.toLowerCase() == 'finished' ||
+        status.toLowerCase() == 'complete';
+    final cover = _resolveImage((data['cover_url'] ?? '').toString())?.toString();
+    final detailTitle = _clean((data['title'] ?? '').toString());
+    final detailAuthor = _clean((data['author_name'] ?? '').toString());
+    final detailSummary = _clean((data['summary_short'] ?? '').toString());
+    return Novel(
+      id: seed.id,
+      title: detailTitle.isEmpty ? seed.title : detailTitle,
+      author: detailAuthor.isEmpty ? seed.author : detailAuthor,
+      genre: tags.isNotEmpty ? tags.join(' · ') : workTypeText,
+      summary: detailSummary.isEmpty ? seed.summary : detailSummary,
+      colors: seed.colors,
+      isComplete: completed,
+      coverUrl: cover ?? seed.coverUrl,
+      chapterCount: seed.chapterCount,
+      sourceId: source.id,
+      sourceName: source.name,
+      sourceUrl: seed.sourceUrl,
+      sourceBaseUrl: source.baseUrl,
+      sourceImageHosts: source.imageHosts,
+    );
+  }
+
+  Future<List<NovelChapter>> _lightNovelChapters(Novel novel) async {
+    final bookId = _lightNovelBookId(novel.sourceUrl);
+    if (bookId == null) throw const FormatException('无法从轻之国度书籍链接识别书号');
+    final volumes = await _lightNovelPaged(
+      'new-content-read/get-book-volumes',
+      {'book_id': bookId},
+      'volume_id',
+    );
+    if (volumes.isEmpty) {
+      throw const FormatException('这本书没有可读取的在线目录，可能仅提供 EPUB 下载');
+    }
+    final chapters = <NovelChapter>[];
+    final seen = <int>{};
+    for (final volume in volumes.take(200)) {
+      final volumeId = int.tryParse((volume['volume_id'] ?? '').toString());
+      if (volumeId == null || volumeId <= 0) continue;
+      final volumeTitle = _clean((volume['title'] ?? '').toString());
+      final rows = await _lightNovelPaged(
+        'new-content-read/get-volume-chapters',
+        {'book_id': bookId, 'volume_id': volumeId},
+        'chapter_id',
+      );
+      for (final row in rows) {
+        final chapterId = int.tryParse((row['chapter_id'] ?? '').toString());
+        if (chapterId == null || chapterId <= 0 || !seen.add(chapterId)) continue;
+        final id = _stableId(
+          source.id + '|' + bookId.toString() + '|' + chapterId.toString(),
+          0x20000000,
+        );
+        final volumeStableId = _stableId(
+          source.id + '|' + bookId.toString() + '|' + volumeId.toString(),
+          0x10000000,
+        );
+        final title = _clean((row['title'] ?? '').toString());
+        chapters.add(
+          NovelChapter(
+            title.isEmpty ? '章节 $chapterId' : title,
+            '',
+            id: id,
+            volumeId: volumeStableId,
+            volumeTitle: volumeTitle,
+            sourceId: source.id,
+            sourceUrl: source.baseUri.resolve('/reader/$bookId/$chapterId').toString(),
+          ),
+        );
+        if (chapters.length >= 5000) break;
+      }
+      if (chapters.length >= 5000) break;
+    }
+    if (chapters.isEmpty) throw const FormatException('轻之国度返回了卷信息，但没有解析到章节');
+    return List.unmodifiable(chapters);
+  }
+
+  Future<String> _lightNovelChapterContent(NovelChapter chapter) async {
+    final url = Uri.tryParse(chapter.sourceUrl ?? '');
+    final match = url == null
+        ? null
+        : RegExp(r'/reader/(\d+)/(\d+)').firstMatch(url.path);
+    if (url == null || url.host != source.baseUri.host || match == null) {
+      throw const FormatException('轻之国度章节链接无效');
+    }
+    final bookId = int.parse(match.group(1)!);
+    final chapterId = int.parse(match.group(2)!);
+    final data = await _lightNovelApi(
+      'new-content-read/get-chapter-detail',
+      {'book_id': bookId, 'chapter_id': chapterId},
+    );
+    final snapshot = data['body_snapshot'] is Map
+        ? Map<String, dynamic>.from(data['body_snapshot'] as Map)
+        : <String, dynamic>{};
+    final html = (snapshot['body_html'] ?? '').toString();
+    final plain = (snapshot['body_text'] ?? '').toString();
+    if (html.trim().isNotEmpty) {
+      final document = parse('<div id="lightnovel-body">$html</div>');
+      final root = document.querySelector('#lightnovel-body');
+      if (root != null) {
+        final text = root.nodes.map(_flattenSourceNode).join();
+        if (text.trim().isNotEmpty) return text.trim();
+      }
+    }
+    if (plain.trim().isNotEmpty) {
+      return plain
+          .replaceAll('\r\n', '\n')
+          .replaceAll('\r', '\n')
+          .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+          .trim();
+    }
+    final locked = data['locked'] == true || data['locked'].toString() == '1';
+    final coin = int.tryParse((data['coin_price'] ?? '0').toString()) ?? 0;
+    final brave = int.tryParse((data['brave_required'] ?? '0').toString()) ?? 0;
+    if (locked || coin > 0 || brave > 0) {
+      return coin > 0
+          ? '本章为付费章节，需要在轻之国度网站按站点规则购买后阅读。'
+          : brave > 0
+              ? '本章需要达到轻之国度要求的勇气值。'
+              : '本章尚未解锁，请在轻之国度网站查看访问条件。';
+    }
+    throw const FormatException('轻之国度没有返回章节正文');
+  }
+
   Future<String> chapterContent(NovelChapter chapter) async {
+    if (source.engine == 'lightnovel_fun') return _lightNovelChapterContent(chapter);
     final url = chapter.sourceUrl;
     if (url == null || url.isEmpty) {
       throw const FormatException('章节缺少原始网页地址');

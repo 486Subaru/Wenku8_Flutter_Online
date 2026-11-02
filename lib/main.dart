@@ -11,6 +11,7 @@ import 'app_interactions.dart';
 import 'app_window_insets.dart';
 import 'app_licenses.dart';
 import 'app_repository.dart';
+import 'book_sources.dart';
 import 'catalog.dart';
 import 'legacy_wenku_repository.dart';
 import 'library_state.dart';
@@ -81,7 +82,15 @@ Future<void> main() async {
   final WenkuAccount? account = LocalPlatform.fileActions
       ? WenkuAccount()
       : null;
-  final remote = LegacyWenkuRepository();
+  final sourcePreferences = await SharedPreferences.getInstance();
+  final bookSources = BookSourceStore(sourcePreferences);
+  try {
+    await bookSources.load();
+  } catch (_) {
+    // A damaged optional source list must never prevent opening the library.
+  }
+  BookSourceStore.instance = bookSources;
+  final remote = LegacyWenkuRepository(bookSources: bookSources);
   final repository = LocalPlatform.fileActions
       ? await openApplicationLibrary(remote: remote, network: network)
       : const DemoNovelRepository();

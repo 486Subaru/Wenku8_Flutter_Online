@@ -48,7 +48,6 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
     private var activityBinding: ActivityPluginBinding? = null
     private var pendingLogin: MethodChannel.Result? = null
     private var pendingSourceLogin: MethodChannel.Result? = null
-    private var pendingSourceBase: String? = null
     private var lastRequestAt = 0L
     private var lastSourceRequestAt = 0L
     private var userAgent = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
@@ -158,7 +157,6 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
             return
         }
         pendingSourceLogin = result
-        pendingSourceBase = baseUrl
         try {
             activity.startActivityForResult(
                 Intent(activity, CustomSourceLoginActivity::class.java)
@@ -168,7 +166,6 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
             )
         } catch (_: Exception) {
             pendingSourceLogin = null
-            pendingSourceBase = null
             result.error("SOURCE_LOGIN_OPEN_FAILED", "无法打开书源登录页面", null)
         }
     }
@@ -308,10 +305,8 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
                 )
                 if (sameOrigin(current, origin)) {
                     connection.setRequestProperty("Referer", rawBaseUrl)
-                    if (!image) {
-                        Wenku8SessionCookies.cookieHeader(current.toString())?.let {
-                            connection.setRequestProperty("Cookie", it)
-                        }
+                    Wenku8SessionCookies.cookieHeader(current.toString())?.let {
+                        connection.setRequestProperty("Cookie", it)
                     }
                 }
 
@@ -482,7 +477,6 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
             main.post { it.error("SOURCE_LOGIN_ACTIVITY", "书源登录窗口已关闭", null) }
         }
         pendingSourceLogin = null
-        pendingSourceBase = null
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?): Boolean {
@@ -494,14 +488,10 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
         }
         if (requestCode == SOURCE_LOGIN_REQUEST) {
             val callback = pendingSourceLogin
-            val baseUrl = pendingSourceBase
             pendingSourceLogin = null
-            pendingSourceBase = null
-            callback?.success(
-                resultCode == Activity.RESULT_OK &&
-                    !baseUrl.isNullOrBlank() &&
-                    !Wenku8SessionCookies.cookieHeader(baseUrl).isNullOrBlank(),
-            )
+            // The dedicated login activity verifies cookies against the actual
+            // current/login URL so path-scoped cookies are not mistaken for failure.
+            callback?.success(resultCode == Activity.RESULT_OK)
             return true
         }
         return false

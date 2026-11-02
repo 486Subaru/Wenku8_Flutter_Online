@@ -72,6 +72,7 @@ import 'native_effects.dart' show NativeGlassGroup;
 import 'lan_handoff_widgets.dart';
 import 'network_status.dart';
 import 'novel_feed_controller.dart';
+import 'online_component.dart';
 import 'offline_repository.dart';
 import 'offline_widgets.dart';
 import 'low_performance_page.dart';
@@ -1091,6 +1092,23 @@ class DiscoverPage extends StatelessWidget {
         ),
       );
     } else if (books.isEmpty && featuredCount == 0 && feed?.error != null) {
+      final failure = feed?.error;
+      final needsLogin = failure is OnlineAuthenticationRequired ||
+          failure is OnlineChallengeRequired;
+      final features = WenkuFeaturesScope.maybeOf(context);
+      final loginAction = needsLogin && features != null
+          ? () => unawaited(
+              pushNovelPage<void>(
+                context,
+                WenkuAccountPage(
+                  account: features.account,
+                  state: state,
+                  repository: repository,
+                ),
+                reduceMotion: state.reduceMotion,
+              ),
+            )
+          : null;
       body = Column(
         children: [
           Padding(
@@ -1107,25 +1125,30 @@ class DiscoverPage extends StatelessWidget {
           Expanded(
             child: ContentNotice(
               icon: CupertinoIcons.wifi_exclamationmark,
-              title: '书籍加载失败',
+              title: needsLogin
+                  ? failure is OnlineChallengeRequired
+                      ? '需要完成官网验证'
+                      : '需要连接文库账号'
+                  : '书籍加载失败',
               message: feed!.failureMessage,
-              onRetry: feed!.retry,
+              actionLabel: loginAction != null ? '登录 / 官网验证' : '重试',
+              onRetry: loginAction ?? feed!.retry,
               secondaryAction: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   ?returnToLatest,
-                  if (feed?.publication != null &&
-                      WenkuFeaturesScope.maybeOf(context) != null)
+                  if (feed?.publication != null && features != null)
                     GlassTextButton(
-                      onPressed: () => pushNovelPage<void>(
-                        context,
-                        WenkuAccountPage(
-                          account: WenkuFeaturesScope.maybeOf(context)!.account,
-                          state: state,
-                          repository: repository,
-                        ),
-                        reduceMotion: state.reduceMotion,
-                      ),
+                      onPressed: loginAction ??
+                          () => pushNovelPage<void>(
+                            context,
+                            WenkuAccountPage(
+                              account: features.account,
+                              state: state,
+                              repository: repository,
+                            ),
+                            reduceMotion: state.reduceMotion,
+                          ),
                       child: const AppText('查看账号连接'),
                     ),
                 ],
@@ -3940,17 +3963,38 @@ class InlineSearchResults extends StatelessWidget {
               padding: EdgeInsets.only(top: 24),
               child: BookCollectionSkeleton(rows: 2),
             )
-          else if (feed.error != null)
-            Column(
+          else if (feed.error != null) {
+            final failure = feed.error;
+            final needsLogin = failure is OnlineAuthenticationRequired ||
+                failure is OnlineChallengeRequired;
+            final features = WenkuFeaturesScope.maybeOf(context);
+            return Column(
               children: [
-                const AppText('推荐载入失败，仍可搜索书名或作者'),
+                AppText(
+                  needsLogin
+                      ? '登录文库账号并完成官网验证后即可加载推荐'
+                      : '推荐载入失败，仍可搜索书名或作者',
+                ),
                 GlassTextButton(
-                  onPressed: feed.retry,
-                  child: const AppText('重试'),
+                  onPressed: needsLogin && features != null
+                      ? () => unawaited(
+                          pushNovelPage<void>(
+                            context,
+                            WenkuAccountPage(
+                              account: features.account,
+                              state: state,
+                              repository: repository,
+                            ),
+                            reduceMotion: state.reduceMotion,
+                          ),
+                        )
+                      : feed.retry,
+                  child: AppText(needsLogin ? '登录 / 官网验证' : '重试'),
                 ),
               ],
-            )
-          else
+            );
+          }
+      else
             const AppText('搜索书名或作者，开始寻找故事。'),
         ],
       );
@@ -3959,11 +4003,35 @@ class InlineSearchResults extends StatelessWidget {
       return SearchSkeleton(status: feed.tagProgressLabel);
     }
     if (books.isEmpty && feed.error != null) {
+      final failure = feed.error;
+      final needsLogin = failure is OnlineAuthenticationRequired ||
+          failure is OnlineChallengeRequired;
+      final features = WenkuFeaturesScope.maybeOf(context);
+      final loginAction = features == null
+          ? null
+          : () => unawaited(
+              pushNovelPage<void>(
+                context,
+                WenkuAccountPage(
+                  account: features.account,
+                  state: state,
+                  repository: repository,
+                ),
+                reduceMotion: state.reduceMotion,
+              ),
+            );
       return ContentNotice(
         icon: CupertinoIcons.wifi_exclamationmark,
-        title: '搜索失败，请稍后重试',
+        title: needsLogin
+            ? failure is OnlineChallengeRequired
+                ? '需要完成官网验证'
+                : '需要连接文库账号'
+            : '搜索失败，请稍后重试',
         message: feed.failureMessage,
-        onRetry: feed.retry,
+        actionLabel: needsLogin && loginAction != null
+            ? '登录 / 官网验证'
+            : '重试',
+        onRetry: needsLogin && loginAction != null ? loginAction : feed.retry,
       );
     }
     if (books.isEmpty) {

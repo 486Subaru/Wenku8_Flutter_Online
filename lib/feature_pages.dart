@@ -476,7 +476,7 @@ class _WenkuAccountPageState extends State<WenkuAccountPage> {
                   const SizedBox(height: 10),
                   AppText(account.operation ?? '正在打开登录网站'),
                 ],
-                FeatureError(account.error),
+                FeatureError(loginSource == null ? account.error : null),
               ],
             ),
           ),

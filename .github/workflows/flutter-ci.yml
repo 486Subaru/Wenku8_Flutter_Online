@@ -2,7 +2,7 @@ name: Online APK build and checks
 
 on:
   push:
-    branches: ['restore-online-0.5.5']
+    branches: ['restore-online-0.5.5', 'riqing-custom-sources']
   pull_request:
     branches: ['master']
   workflow_dispatch:

@@ -28,6 +28,39 @@ void main() {
       expect(page.totalPages, 2);
     });
 
+    test('parses the titled link when a cover-only link comes first', () {
+      const html = '''
+        <html><body>
+          <table class="grid"><tr><td>
+            <div style="width:373px;height:136px;">
+              <div style="width:95px;">
+                <a href="/book/4265.htm" title="测试小说">
+                  <img src="http://img.wenku8.com/image/4/4265/4265s.jpg">
+                </a>
+              </div>
+              <div style="margin-top:2px;">
+                <b><a href="/book/4265.htm">测试小说</a></b>
+                <p>作者:测试作者/分类:奇幻 更新:2026-11-01/字数:90K/连载中</p>
+                <p><a href="/modules/article/addbookcase.php?bid=4265">加入书架</a></p>
+              </div>
+            </div>
+          </td></tr></table>
+        </body></html>
+      ''';
+
+      final books = Wenku8HtmlParser.parseBookList(html);
+      expect(books, hasLength(1));
+      expect(books.single.id, 4265);
+      expect(books.single.title, '测试小说');
+      expect(books.single.author, '测试作者');
+      expect(books.single.genre, '奇幻');
+      expect(books.single.lastUpdate, '2026-11-01');
+      expect(
+        books.single.coverUrl,
+        'https://img.wenku8.com/image/4/4265/4265s.jpg',
+      );
+    });
+
     test('parses detail metadata and chapter directory prefix', () {
       const html = '''
         <html>
@@ -87,6 +120,7 @@ void main() {
             <ul id="contentdp"><li>章节导航</li></ul>
             <p>第一段正文。</p>
             <p>第二段正文。<img src="http://img.wenku8.com/image/4/4265/illust.jpg"></p>
+            <p><img src="/pictures/4/4265/1001/1.jpg"></p>
           </div>
         </body></html>
       ''';
@@ -98,6 +132,7 @@ void main() {
       expect(body, contains('第一段正文。'));
       expect(body, contains('第二段正文。'));
       expect(body, contains('<!--image-->https://img.wenku8.com/image/4/4265/illust.jpg<!--image-->'));
+      expect(body, contains('<!--image-->https://www.wenku8.net/pictures/4/4265/1001/1.jpg<!--image-->'));
       expect(body, isNot(contains('章节导航')));
     });
   });

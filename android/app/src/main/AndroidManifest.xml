@@ -105,6 +105,11 @@
             android:exported="false"
             android:theme="@android:style/Theme.Material.Light.NoActionBar"
             android:configChanges="orientation|screenSize|keyboardHidden" />
+        <activity
+            android:name=".CustomSourceLoginActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
         <service
             android:name="com.ryanheise.audioservice.AudioService"
             android:foregroundServiceType="mediaPlayback"

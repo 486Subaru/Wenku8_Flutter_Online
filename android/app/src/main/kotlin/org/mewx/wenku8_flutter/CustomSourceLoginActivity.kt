@@ -101,7 +101,7 @@ class CustomSourceLoginActivity : Activity() {
 
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
-                    status.text = if (!Wenku8SessionCookies.cookieHeader(base.toString()).isNullOrBlank()) {
+                    status.text = if (hasSourceCookie(url)) {
                         "已检测到此网站的 Cookie。确认登录成功后，点击右上角“完成登录”。"
                     } else {
                         "请在下方网站页面登录；账号与主站分开保存。"
@@ -130,6 +130,11 @@ class CustomSourceLoginActivity : Activity() {
             uri.userInfo == null
     }
 
+    private fun hasSourceCookie(currentUrl: String?): Boolean {
+        val candidates = listOfNotNull(currentUrl, loginUrl, base.toString()).distinct()
+        return candidates.any { !Wenku8SessionCookies.cookieHeader(it).isNullOrBlank() }
+    }
+
     private fun finishWithError(message: String) {
         Toast.makeText(this, message, Toast.LENGTH_LONG).show()
         setResult(RESULT_CANCELED)
@@ -138,7 +143,7 @@ class CustomSourceLoginActivity : Activity() {
 
     private fun completeLogin() {
         CookieManager.getInstance().flush()
-        if (Wenku8SessionCookies.cookieHeader(base.toString()).isNullOrBlank()) {
+        if (!hasSourceCookie(browser.url)) {
             Toast.makeText(this, "尚未检测到此网站的登录 Cookie", Toast.LENGTH_SHORT).show()
             return
         }

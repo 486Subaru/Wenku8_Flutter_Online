@@ -209,7 +209,7 @@ class BookSourceSettingsPage extends StatelessWidget {
             ],
             const SizedBox(height: 12),
             AppText(
-              '说明：当前书源解析面向 HTTPS 静态 HTML 页面，使用 CSS 选择器提取数据。需要复杂 JavaScript 渲染、验证码或特殊接口的网站，可能需要额外适配。书源登录 Cookie 按网站域名隔离。',
+              '说明：当前通用书源抓取与独立登录首版仅接入 Android。解析面向 HTTPS 静态 HTML 页面，使用 CSS 选择器提取数据。需要复杂 JavaScript 渲染、验证码或特殊接口的网站，可能需要额外适配。书源登录 Cookie 按网站域名隔离。',
               style: TextStyle(
                 fontSize: 12,
                 height: 1.6,

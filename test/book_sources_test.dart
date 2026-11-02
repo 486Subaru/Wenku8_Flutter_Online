@@ -147,6 +147,90 @@ void main() {
     expect(requests, hasLength(4));
   });
 
+
+  test('uses the Light Novel Kingdom API adapter for search, detail, TOC and body', () async {
+    final config = BookSourceConfig(
+      id: 'lightnovel-fun',
+      name: '轻之国度',
+      baseUrl: 'https://www.lightnovel.fun/',
+      engine: 'lightnovel_fun',
+      loginUrl: '/',
+      searchUrlTemplate: '',
+      searchItemSelector: '',
+      searchTitleSelector: '',
+      chapterItemSelector: '',
+      chapterContentSelector: '',
+      imageHosts: const ['lightnovel.fun'],
+      enabled: false,
+    );
+    config.validate();
+    final requests = <String>[];
+    final responses = <String, String>{
+      '/api/pc-proxy/api/new-content-read/get-book-detail': '''
+        {"code":0,"data":{"title":"示例轻小说","author_name":"测试作者","summary_short":"作品简介","tags":["异世界"],"cover_url":"https://cdn.lightnovel.fun/cover.jpg","work_type":{"text":"轻小说"}}}
+      ''',
+      '/api/pc-proxy/api/new-content-read/get-book-volumes': '''
+        {"code":0,"data":{"list":[{"volume_id":11,"title":"第一卷","chapter_count":1}],"pagination":{"page_count":1,"total":1}}}
+      ''',
+      '/api/pc-proxy/api/new-content-read/get-volume-chapters': '''
+        {"code":0,"data":{"list":[{"chapter_id":22,"title":"第一章"}],"pagination":{"page_count":1,"total":1}}}
+      ''',
+      '/api/pc-proxy/api/new-content-read/get-chapter-detail': '''
+        {"code":0,"data":{"body_snapshot":{"body_html":"<p>第一段正文。</p><p>第二段正文。</p>","body_text":"第一段正文。\\n第二段正文。"}}}
+      ''',
+    };
+    final repository = BookSourceRepository(
+      config,
+      lightNovelSearchRequest: (
+        String query, {
+        required String baseUrl,
+        required int page,
+      }) async {
+        expect(query, '示例');
+        expect(baseUrl, config.baseUrl);
+        expect(page, 1);
+        return '''
+          {"code":0,"data":{"collections":[{"sid":123,"name":"示例轻小说","author":"测试作者","cover":"https://cdn.lightnovel.fun/cover.jpg","group_name":"轻小说"}],"articles":[]}}
+        ''';
+      },
+      jsonRequest: (url, {required baseUrl, required body}) async {
+        expect(baseUrl, config.baseUrl);
+        requests.add(Uri.parse(url).path);
+        final response = responses[Uri.parse(url).path];
+        if (response == null) throw StateError('Unexpected API: $url');
+        return response;
+      },
+    );
+
+    final page = await repository.search('示例');
+    expect(page.items, hasLength(1));
+    final seed = page.items.single;
+    expect(seed.title, '示例轻小说');
+    expect(seed.sourceUrl, 'https://www.lightnovel.fun/book/123');
+
+    final detail = await repository.detail(seed);
+    expect(detail.author, '测试作者');
+    expect(detail.summary, '作品简介');
+    expect(detail.genre, '异世界');
+    expect(detail.coverUrl, 'https://cdn.lightnovel.fun/cover.jpg');
+
+    final chapters = await repository.chapters(detail);
+    expect(chapters, hasLength(1));
+    expect(chapters.single.title, '第一章');
+    expect(chapters.single.volumeTitle, '第一卷');
+    expect(chapters.single.sourceUrl, 'https://www.lightnovel.fun/reader/123/22');
+
+    final body = await repository.chapterContent(chapters.single);
+    expect(body, contains('第一段正文。'));
+    expect(body, contains('第二段正文。'));
+    expect(requests, [
+      '/api/pc-proxy/api/new-content-read/get-book-detail',
+      '/api/pc-proxy/api/new-content-read/get-book-volumes',
+      '/api/pc-proxy/api/new-content-read/get-volume-chapters',
+      '/api/pc-proxy/api/new-content-read/get-chapter-detail',
+    ]);
+  });
+
   test('blocks search result links that escape the configured origin', () async {
     final config = _config();
     final repository = BookSourceRepository(

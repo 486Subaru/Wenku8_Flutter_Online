@@ -19,18 +19,17 @@ internal object Wenku8UrlPolicy {
     fun isOfficialPage(raw: String): Boolean {
         val uri = parse(raw) ?: return false
         return uri.scheme.equals("https", ignoreCase = true) &&
-            uri.host?.lowercase() in officialHosts &&
+            uri.host?.lowercase()?.let { it in officialHosts } == true &&
             uri.userInfo == null &&
             (uri.port == -1 || uri.port == 443) &&
-            uri.rawPath?.startsWith("/") == true &&
-            uri.rawFragment == null
+            uri.rawPath?.startsWith("/") == true
     }
 
     fun isAllowedImage(raw: String): Boolean {
         val uri = parse(raw) ?: return false
         val path = uri.rawPath ?: return false
         return uri.scheme.equals("https", ignoreCase = true) &&
-            uri.host?.lowercase() in imageHosts &&
+            uri.host?.lowercase()?.let { it in imageHosts } == true &&
             uri.userInfo == null &&
             (uri.port == -1 || uri.port == 443) &&
             uri.rawQuery == null &&

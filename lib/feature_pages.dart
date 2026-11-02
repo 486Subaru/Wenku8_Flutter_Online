@@ -745,29 +745,15 @@ class _PublicationLibraryPageState extends State<PublicationLibraryPage> {
             failure is OnlineChallengeRequired) &&
         widget.account != null) {
       return ContentNotice(
-        icon: widget.account!.authenticated
-            ? CupertinoIcons.arrow_clockwise
-            : CupertinoIcons.person_crop_circle,
+        icon: CupertinoIcons.person_crop_circle,
         title: failure is OnlineChallengeRequired
             ? '需要完成官网验证'
-            : widget.account!.authenticated
-                ? '分类暂未读取成功'
-                : '此分类需要文库账号',
+            : '需要重新连接文库账号',
         message: failure is OnlineChallengeRequired
             ? '请打开文库官网页面完成验证，再重新加载分类。'
-            : widget.account!.authenticated
-                ? '账号连接正常，分类服务暂未返回书目。请稍后重新加载。'
-                : '登录后可读取官网出版分类。',
-        actionLabel: failure is OnlineChallengeRequired
-            ? '打开官网验证'
-            : widget.account!.authenticated
-                ? '重新加载'
-                : '登录账号',
-        onRetry: failure is OnlineChallengeRequired
-            ? _loginForLibrary
-            : widget.account!.authenticated
-                ? () => _select(_selected!, force: true)
-                : _loginForLibrary,
+            : '当前官网会话无效或已过期。请重新登录后再读取分类。',
+        actionLabel: '打开官网登录',
+        onRetry: _loginForLibrary,
       );
     }
     return DiscoverPage(

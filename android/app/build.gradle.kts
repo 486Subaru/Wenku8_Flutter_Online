@@ -30,12 +30,12 @@ android {
 
     defaultConfig {
         // Public source previews must not replace an installed distribution.
-        applicationId = "org.mewx.wenku8_flutter.online"
+        applicationId = "org.mewx.wenku8_flutter.online.fix"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
-        versionName = "0.5.5-online"
-        manifestPlaceholders["wenkuAppLabel"] = "日轻"
+        versionName = "0.5.5-online-fix"
+        manifestPlaceholders["wenkuAppLabel"] = "日轻修正版"
         // AGP otherwise builds upstream desktop utilities too, including the
         // DRM tool whose encryption code is intentionally disabled in this app.
         externalNativeBuild.cmake.targets.addAll(listOf("mobi", "wenku_mobi"))

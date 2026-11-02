@@ -249,6 +249,8 @@ class BookSourceConfig {
       imageHosts: value['imageHosts'] is List
           ? (value['imageHosts'] as List)
                 .whereType<String>()
+                .map((host) => host.trim().toLowerCase())
+                .where((host) => host.isNotEmpty)
                 .take(12)
                 .toList(growable: false)
           : const [],
@@ -402,7 +404,7 @@ class BookSourceRepository {
           id: id,
           title: title,
           author: author,
-          genre: source.name,
+          genre: '',
           summary: summary,
           colors: _colors(id),
           coverUrl: coverUrl,
@@ -443,7 +445,7 @@ class BookSourceRepository {
       id: seed.id,
       title: title.isEmpty ? seed.title : title,
       author: author.isEmpty ? seed.author : author,
-      genre: genre.isEmpty ? source.name : genre,
+      genre: genre,
       summary: summary.isEmpty ? seed.summary : summary,
       colors: seed.colors,
       isComplete: status.contains('完结') || status.contains('完本'),
@@ -546,8 +548,6 @@ class BookSourceRepository {
       'footer',
       'button',
       'svg',
-      'ul',
-      'ol',
     }.contains(tag)) {
       return '';
     }

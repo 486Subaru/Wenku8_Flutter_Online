@@ -121,9 +121,10 @@ class WenkuAccount extends ChangeNotifier {
   Future<void> refreshProfile() => initialize();
 
   Future<T> _notRestored<T>(String feature) async {
-    error = '$feature功能正在恢复，当前版本暂未开放';
+    final message = '$feature功能正在恢复，当前版本暂未开放';
+    error = message;
     notifyListeners();
-    throw FormatException(error);
+    throw FormatException(message);
   }
 
   Future<void> signIn() => _notRestored('每日签到');

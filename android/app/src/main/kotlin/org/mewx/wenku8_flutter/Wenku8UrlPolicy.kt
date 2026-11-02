@@ -28,14 +28,22 @@ internal object Wenku8UrlPolicy {
     fun isAllowedImage(raw: String): Boolean {
         val uri = parse(raw) ?: return false
         val path = uri.rawPath ?: return false
+        val host = uri.host?.lowercase()
+        val knownImageHost = host in imageHosts && imagePath.matches(path)
+        // Some chapter illustrations are served from the official site itself,
+        // under these two static paths only. Never allow arbitrary page URLs as images.
+        val officialIllustration = host in officialHosts &&
+            Regex(
+                """^/(?:pictures|illustrations)/[A-Za-z0-9_./-]+\.(?:jpe?g|png|gif|webp)$""",
+                RegexOption.IGNORE_CASE,
+            ).matches(path)
         return uri.scheme.equals("https", ignoreCase = true) &&
-            uri.host?.lowercase()?.let { it in imageHosts } == true &&
+            (knownImageHost || officialIllustration) &&
             uri.userInfo == null &&
             (uri.port == -1 || uri.port == 443) &&
             uri.rawQuery == null &&
             uri.rawFragment == null &&
-            path.split('/').none { it == ".." } &&
-            imagePath.matches(path)
+            path.split('/').none { it == ".." }
     }
 
     private fun parse(raw: String): URI? =

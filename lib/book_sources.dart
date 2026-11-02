@@ -428,7 +428,7 @@ class BookSourceRepository {
           id: id,
           title: title,
           author: author,
-          genre: genre.isEmpty ? seed.genre : genre,
+          genre: genre,
           summary: summary,
           colors: _colors(id),
           coverUrl: coverUrl?.toString(),

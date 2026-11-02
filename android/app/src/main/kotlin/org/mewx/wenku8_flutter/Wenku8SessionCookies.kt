@@ -46,7 +46,7 @@ internal object Wenku8SessionCookies {
     /** Remove only Wenku8 cookies, leaving cookies for every other site intact. */
     fun clear() {
         val names = parse(cookieHeader(ORIGIN).orEmpty()).keys
-        val deletions = <String>[]
+        val deletions = mutableListOf<String>()
         for (name in names) {
             deletions.add(name + "=; Max-Age=0; Path=/")
             deletions.add(name + "=; Max-Age=0; Path=/; Domain=www.wenku8.net")

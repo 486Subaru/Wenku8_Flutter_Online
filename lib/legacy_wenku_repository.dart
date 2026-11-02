@@ -1,7 +1,6 @@
 import 'book_search.dart';
 import 'catalog.dart';
 import 'legacy_transport.dart';
-import 'online_component.dart';
 import 'publication_catalog.dart';
 import 'tag_catalogue.dart';
 import 'wenku8_html_parser.dart';

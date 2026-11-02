@@ -86,11 +86,11 @@ abstract final class Wenku8HtmlParser {
       final author = _capture(
         text,
         RegExp(r'作者[:：]\s*(.+?)(?=分类[:：]|文库分类[:：]|更新[:：]|状态[:：]|字数[:：]|Tags[:：]|简介[:：]|$)'),
-      );
+      ).split('/').first.trim();
       final category = _capture(
         text,
         RegExp(r'(?:分类|文库分类)[:：]\s*(.+?)(?=更新[:：]|状态[:：]|字数[:：]|Tags[:：]|简介[:：]|$)'),
-      );
+      ).split('/').first.trim();
       final updated = _capture(
         text,
         RegExp(r'(?:更新|最后更新)[:：]\s*(\d{4}[-/]\d{1,2}[-/]\d{1,2})'),
@@ -413,11 +413,174 @@ abstract final class Wenku8HtmlParser {
     final uri = Uri.tryParse(raw.trim());
     if (uri == null) return null;
     var resolved = uri.hasScheme ? uri : baseUri.resolveUri(uri);
-    if (resolved.scheme == 'http' && _imageHosts.contains(resolved.host)) {
+    const officialHosts = {'www.wenku8.net', 'wenku8.net'};
+    if (resolved.scheme == 'http' &&
+        (_imageHosts.contains(resolved.host) ||
+            officialHosts.contains(resolved.host))) {
       resolved = resolved.replace(scheme: 'https', port: null);
     }
+    final imageHost = _imageHosts.contains(resolved.host) &&
+        RegExp(
+          r'^/(?:image|pictures|illustrations)/[A-Za-z0-9_./-]+\.(?:jpe?g|png|gif|webp)    return resolved.toString();
+  }
+
+  static Uri? _resolvePage(String raw) {
+    final uri = Uri.tryParse(raw.trim());
+    if (uri == null) return null;
+    var resolved = uri.hasScheme ? uri : Uri.parse(base).resolveUri(uri);
+    if (resolved.scheme == 'http' &&
+        const {'www.wenku8.net', 'wenku8.net'}.contains(resolved.host)) {
+      resolved = resolved.replace(scheme: 'https', port: 443);
+    }
     if (resolved.scheme != 'https' ||
-        !_imageHosts.contains(resolved.host) ||
+        !const {'www.wenku8.net', 'wenku8.net'}.contains(resolved.host) ||
+        resolved.userInfo.isNotEmpty ||
+        resolved.hasPort && resolved.port != 443) {
+      return null;
+    }
+    return resolved;
+  }
+
+  static int? _bookId(String? raw) {
+    if (raw == null) return null;
+    final uri = _resolvePage(raw);
+    final path = uri?.path ?? raw;
+    return int.tryParse(
+      RegExp(r'/book/(\d+)\.htm').firstMatch(path)?.group(1) ?? '',
+    );
+  }
+
+  static int? _chapterId(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    final uri = Uri.tryParse(raw);
+    final path = uri?.path ?? raw.split('?').first.split('#').first;
+    final match = RegExp(r'(?:^|/)(\d+)\.htm$').firstMatch(path);
+    return int.tryParse(match?.group(1) ?? '');
+  }
+
+  static int? _lastPage(Document document) {
+    var last = 0;
+    for (final anchor in document.querySelectorAll('a[href]')) {
+      final href = anchor.attributes['href'] ?? '';
+      final uri = _resolvePage(href);
+      final page = int.tryParse(uri?.queryParameters['page'] ?? '');
+      if (page != null && page > last) last = page;
+    }
+    return last == 0 ? null : last;
+  }
+
+  static String _cleanTitle(String raw) {
+    var title = _oneLine(raw).split('小说在线阅读').first;
+    if (title.contains('《') && title.contains('》')) {
+      title = title.substring(title.indexOf('《') + 1, title.indexOf('》'));
+    }
+    title = title
+        .replaceAll(RegExp(r'\s*-\s*轻小说文库\s*$'), '')
+        .replaceAll(RegExp(r'\s*[-–—]\s*最新最全.*$'), '')
+        .replaceAll(RegExp(r'\[[^\]]*]'), '')
+        .trim();
+    return title;
+  }
+
+  static String _capture(String text, RegExp pattern) =>
+      pattern.firstMatch(text)?.group(1)?.trim() ?? '';
+
+  static String _oneLine(String value) =>
+      value.replaceAll('\u00a0', ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+
+  static List<Color> _colors(int id) =>
+      _palettes[id.abs() % _palettes.length];
+}
+
+extension _NonEmptyString on String {
+  String ifEmpty(String Function() fallback) =>
+      isEmpty ? fallback() : this;
+}
+,
+          caseSensitive: false,
+        ).hasMatch(resolved.path);
+    final officialPicture = officialHosts.contains(resolved.host) &&
+        RegExp(
+          r'^/(?:pictures|illustrations)/[A-Za-z0-9_./-]+\.(?:jpe?g|png|gif|webp)    return resolved.toString();
+  }
+
+  static Uri? _resolvePage(String raw) {
+    final uri = Uri.tryParse(raw.trim());
+    if (uri == null) return null;
+    var resolved = uri.hasScheme ? uri : Uri.parse(base).resolveUri(uri);
+    if (resolved.scheme == 'http' &&
+        const {'www.wenku8.net', 'wenku8.net'}.contains(resolved.host)) {
+      resolved = resolved.replace(scheme: 'https', port: 443);
+    }
+    if (resolved.scheme != 'https' ||
+        !const {'www.wenku8.net', 'wenku8.net'}.contains(resolved.host) ||
+        resolved.userInfo.isNotEmpty ||
+        resolved.hasPort && resolved.port != 443) {
+      return null;
+    }
+    return resolved;
+  }
+
+  static int? _bookId(String? raw) {
+    if (raw == null) return null;
+    final uri = _resolvePage(raw);
+    final path = uri?.path ?? raw;
+    return int.tryParse(
+      RegExp(r'/book/(\d+)\.htm').firstMatch(path)?.group(1) ?? '',
+    );
+  }
+
+  static int? _chapterId(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    final uri = Uri.tryParse(raw);
+    final path = uri?.path ?? raw.split('?').first.split('#').first;
+    final match = RegExp(r'(?:^|/)(\d+)\.htm$').firstMatch(path);
+    return int.tryParse(match?.group(1) ?? '');
+  }
+
+  static int? _lastPage(Document document) {
+    var last = 0;
+    for (final anchor in document.querySelectorAll('a[href]')) {
+      final href = anchor.attributes['href'] ?? '';
+      final uri = _resolvePage(href);
+      final page = int.tryParse(uri?.queryParameters['page'] ?? '');
+      if (page != null && page > last) last = page;
+    }
+    return last == 0 ? null : last;
+  }
+
+  static String _cleanTitle(String raw) {
+    var title = _oneLine(raw).split('小说在线阅读').first;
+    if (title.contains('《') && title.contains('》')) {
+      title = title.substring(title.indexOf('《') + 1, title.indexOf('》'));
+    }
+    title = title
+        .replaceAll(RegExp(r'\s*-\s*轻小说文库\s*$'), '')
+        .replaceAll(RegExp(r'\s*[-–—]\s*最新最全.*$'), '')
+        .replaceAll(RegExp(r'\[[^\]]*]'), '')
+        .trim();
+    return title;
+  }
+
+  static String _capture(String text, RegExp pattern) =>
+      pattern.firstMatch(text)?.group(1)?.trim() ?? '';
+
+  static String _oneLine(String value) =>
+      value.replaceAll('\u00a0', ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+
+  static List<Color> _colors(int id) =>
+      _palettes[id.abs() % _palettes.length];
+}
+
+extension _NonEmptyString on String {
+  String ifEmpty(String Function() fallback) =>
+      isEmpty ? fallback() : this;
+}
+,
+          caseSensitive: false,
+        ).hasMatch(resolved.path);
+    if (resolved.scheme != 'https' ||
+        !(imageHost || officialPicture) ||
         resolved.userInfo.isNotEmpty ||
         resolved.hasPort && resolved.port != 443 ||
         resolved.hasQuery ||

@@ -300,6 +300,7 @@ class _BookSourceEditorPageState extends State<BookSourceEditorPage> {
         'source-${DateTime.now().microsecondsSinceEpoch}',
     name: _value('name'),
     baseUrl: _value('baseUrl'),
+    engine: widget.source?.engine ?? 'css',
     loginUrl: _value('loginUrl'),
     searchUrlTemplate: _value('searchUrlTemplate'),
     searchItemSelector: _value('searchItemSelector'),

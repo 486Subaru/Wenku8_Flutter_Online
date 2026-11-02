@@ -258,6 +258,7 @@ class _BookSourceEditorPageState extends State<BookSourceEditorPage> {
       'chapterItemSelector': TextEditingController(text: source?.chapterItemSelector ?? ''),
       'chapterTitleSelector': TextEditingController(text: source?.chapterTitleSelector ?? ''),
       'chapterHrefSelector': TextEditingController(text: source?.chapterHrefSelector ?? 'a[href]'),
+      'chapterNextPageSelector': TextEditingController(text: source?.chapterNextPageSelector ?? ''),
       'chapterContentSelector': TextEditingController(text: source?.chapterContentSelector ?? ''),
       'imageHosts': TextEditingController(text: source?.imageHosts.join(', ') ?? ''),
     };
@@ -305,6 +306,7 @@ class _BookSourceEditorPageState extends State<BookSourceEditorPage> {
     chapterHrefSelector: _value('chapterHrefSelector').isEmpty
         ? 'a[href]'
         : _value('chapterHrefSelector'),
+    chapterNextPageSelector: _value('chapterNextPageSelector'),
     chapterContentSelector: _value('chapterContentSelector'),
     imageHosts: _value('imageHosts')
         .split(RegExp(r'[,，\s]+'))
@@ -438,6 +440,7 @@ class _BookSourceEditorPageState extends State<BookSourceEditorPage> {
         _field('chapterItemSelector', '章节条目 CSS', '例如：#chapter-list a 或 .chapter-item'),
         _field('chapterTitleSelector', '章节标题 CSS（可选）', '例如：.chapter-title；留空时使用条目文本'),
         _field('chapterHrefSelector', '章节链接 CSS', '通常为 a[href]'),
+        _field('chapterNextPageSelector', '目录下一页 CSS（可选）', '例如：a.next；最多自动读取 20 页'),
         _field(
           'chapterContentSelector',
           '正文容器 CSS',

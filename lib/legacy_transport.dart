@@ -137,6 +137,22 @@ abstract final class LegacyTransport {
     }
   }
 
+  static Future<bool> openSourceLogin(
+    String loginUrl, {
+    required String baseUrl,
+  }) async {
+    try {
+      return await channel.invokeMethod<bool>('openSourceLogin', {
+        'loginUrl': loginUrl,
+        'baseUrl': baseUrl,
+      }) ?? false;
+    } on MissingPluginException {
+      throw const OnlineComponentUnavailable();
+    } on PlatformException catch (failure) {
+      throw FormatException(failure.message ?? '无法打开该书源的登录页面');
+    }
+  }
+
   static Future<void> clearSession() async {
     try {
       await channel.invokeMethod<void>('clearSession');

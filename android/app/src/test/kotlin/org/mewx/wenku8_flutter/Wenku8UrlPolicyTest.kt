@@ -31,6 +31,28 @@ class Wenku8UrlPolicyTest {
     }
 
     @Test
+    fun allowsOnlyConfiguredHttpsLoginAndRequestHosts() {
+        val base = "https://www.lightnovel.fun/"
+        val hosts = listOf("lightnovel.fun", "auth.lightnovel.fun")
+        assertTrue(Wenku8UrlPolicy.isAllowedSourcePage(base, base, hosts))
+        assertTrue(Wenku8UrlPolicy.isAllowedSourcePage("https://lightnovel.fun/login", base, hosts))
+        assertTrue(Wenku8UrlPolicy.isAllowedSourcePage("https://auth.lightnovel.fun/callback", base, hosts))
+        assertFalse(Wenku8UrlPolicy.isAllowedSourcePage("https://api.lightnovel.fun/callback", base, hosts))
+        assertFalse(Wenku8UrlPolicy.isAllowedSourcePage("http://lightnovel.fun/callback", base, hosts))
+        assertFalse(Wenku8UrlPolicy.isAllowedSourcePage("https://lightnovel.fun:444/callback", base, hosts))
+        assertFalse(Wenku8UrlPolicy.isAllowedSourcePage("https://user@lightnovel.fun/callback", base, hosts))
+        assertFalse(Wenku8UrlPolicy.isAllowedSourcePage("https://lightnovel.fun.evil.example/callback", base, hosts))
+    }
+
+    @Test
+    fun requestHostsAllowExactApiHostsButNotUnlistedSubdomains() {
+        val base = "https://www.example.com/"
+        assertTrue(Wenku8UrlPolicy.isAllowedSourceRequest("https://api.example.net/v1/search", base, listOf("api.example.net")))
+        assertFalse(Wenku8UrlPolicy.isAllowedSourceRequest("https://evil.api.example.net/v1/search", base, listOf("api.example.net")))
+        assertFalse(Wenku8UrlPolicy.isAllowedSourceRequest("http://api.example.net/v1/search", base, listOf("api.example.net")))
+    }
+
+    @Test
     fun allowsOnlyCloudflareChallengePaths() {
         assertTrue(
             Wenku8UrlPolicy.isAllowedChallengeUrl(

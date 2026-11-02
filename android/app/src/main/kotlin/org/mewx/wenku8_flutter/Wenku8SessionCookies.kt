@@ -44,15 +44,25 @@ internal object Wenku8SessionCookies {
     }
 
     /** Keep cookies for a user-configured source scoped to its exact HTTPS origin. */
-    fun absorbSource(url: String, baseUrl: String, headers: List<String>) {
+    fun absorbSource(
+        url: String,
+        baseUrl: String,
+        allowedHosts: List<String>,
+        headers: List<String>,
+    ) {
         val target = runCatching { java.net.URI(url) }.getOrNull() ?: return
         val base = runCatching { java.net.URI(baseUrl) }.getOrNull() ?: return
+        val hosts = (allowedHosts + listOfNotNull(base.host))
+            .map { it.trim().lowercase() }
+            .toSet()
         if (headers.isEmpty() ||
             target.scheme != "https" ||
             base.scheme != "https" ||
-            target.host?.equals(base.host, ignoreCase = true) != true ||
-            (if (target.port == -1) 443 else target.port) !=
-                (if (base.port == -1) 443 else base.port)) return
+            target.userInfo != null ||
+            base.userInfo != null ||
+            target.host?.lowercase()?.let { it in hosts } != true ||
+            (if (target.port == -1) 443 else target.port) != 443 ||
+            (if (base.port == -1) 443 else base.port) != 443) return
         setCookies(url, headers)
         flush()
     }

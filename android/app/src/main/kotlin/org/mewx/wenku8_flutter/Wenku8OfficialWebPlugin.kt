@@ -26,7 +26,14 @@ import org.json.JSONObject
 import java.nio.ByteBuffer
 import java.nio.charset.Charset
 import java.nio.charset.CodingErrorAction
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.Semaphore
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 import java.util.zip.GZIPInputStream
 
 /** Direct, rate-limited access to the official website. No third-party relay is used. */
@@ -36,6 +43,11 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
     PluginRegistry.ActivityResultListener {
 
     private data class Reply(val bytes: ByteArray, val contentType: String?, val finalUrl: String)
+    private data class SourceHostState(
+        val textSemaphore: Semaphore = Semaphore(1),
+        val lastRequestAt: AtomicLong = AtomicLong(0L),
+    )
+    private data class LightNovelSession(val host: String, val securityKey: String, val uid: String)
     private class WebFailure(val code: String, message: String) : Exception(message)
 
     companion object {
@@ -47,14 +59,17 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
         private const val MAX_IMAGE_BYTES = 8 * 1024 * 1024
     }
 
+    // Optional sources must never queue behind the official Wenku8 transport.
     private val worker = Executors.newSingleThreadExecutor()
+    private val sourceWorker = ThreadPoolExecutor(3, 3, 0L, TimeUnit.MILLISECONDS, ArrayBlockingQueue(24))
+    private val sourceImageWorker = ThreadPoolExecutor(4, 4, 0L, TimeUnit.MILLISECONDS, ArrayBlockingQueue(64))
+    private val sourceHostStates = ConcurrentHashMap<String, SourceHostState>()
     private val main = Handler(Looper.getMainLooper())
     private var channel: MethodChannel? = null
     private var activityBinding: ActivityPluginBinding? = null
     private var pendingLogin: MethodChannel.Result? = null
     private var pendingSourceLogin: MethodChannel.Result? = null
     private var lastRequestAt = 0L
-    private var lastSourceRequestAt = 0L
     private var userAgent = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
@@ -82,8 +97,9 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
                     ?: return result.error("SOURCE_BAD_URL", "缺少书源网页地址", null)
                 val baseUrl = call.argument<String>("baseUrl")
                     ?: return result.error("SOURCE_BAD_URL", "缺少书源网站地址", null)
-                dispatch(result) {
-                    val reply = requestSource(url, baseUrl, emptyList(), MAX_TEXT_BYTES, image = false)
+                val requestHosts = call.argument<List<String>>("requestHosts")?.take(12) ?: emptyList()
+                dispatchSource(result) {
+                    val reply = requestSource(url, baseUrl, requestHosts, emptyList(), MAX_TEXT_BYTES, image = false)
                     decode(reply.bytes, reply.contentType)
                 }
             }
@@ -93,8 +109,8 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
                 val baseUrl = call.argument<String>("baseUrl")
                     ?: return result.error("SOURCE_BAD_URL", "缺少书源网站地址", null)
                 val imageHosts = call.argument<List<String>>("imageHosts")?.take(12) ?: emptyList()
-                dispatch(result) {
-                    requestSource(url, baseUrl, imageHosts, MAX_IMAGE_BYTES, image = true).bytes
+                dispatchSourceImage(result) {
+                    requestSource(url, baseUrl, emptyList(), imageHosts, MAX_IMAGE_BYTES, image = true).bytes
                 }
             }
             "postSourceJson" -> {
@@ -107,9 +123,10 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
                 if (body.length > 256_000) {
                     return result.error("SOURCE_BAD_BODY", "API 请求内容过大", null)
                 }
-                dispatch(result) {
+                val requestHosts = call.argument<List<String>>("requestHosts")?.take(12) ?: emptyList()
+                dispatchSource(result) {
                     val reply = requestSource(
-                        url, baseUrl, emptyList(), MAX_TEXT_BYTES, image = false,
+                        url, baseUrl, requestHosts, emptyList(), MAX_TEXT_BYTES, image = false,
                         method = "POST",
                         requestBody = body.toByteArray(Charsets.UTF_8),
                         contentType = "application/json; charset=UTF-8",
@@ -122,10 +139,11 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
                 val baseUrl = call.argument<String>("baseUrl")
                     ?: return result.error("SOURCE_BAD_URL", "缺少轻之国度网站地址", null)
                 val page = call.argument<Int>("page") ?: 1
+                val requestHosts = call.argument<List<String>>("requestHosts")?.take(12) ?: emptyList()
                 if (query.length > 120 || page !in 1..10000) {
                     return result.error("SOURCE_BAD_SEARCH", "轻之国度搜索条件无效", null)
                 }
-                dispatch(result) { lightNovelSearch(baseUrl, query, page) }
+                dispatchSource(result) { lightNovelSearch(baseUrl, query, page, requestHosts) }
             }
             "search" -> {
                 val query = call.argument<String>("query")?.trim().orEmpty()
@@ -188,8 +206,9 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
         }
         val base = runCatching { URL(baseUrl) }.getOrNull()
         val login = runCatching { URL(loginUrl) }.getOrNull()
-        if (base == null || login == null || !safeHttps(base) || !sameOrigin(login, base)) {
-            result.error("SOURCE_LOGIN_URL", "登录网址必须与书源使用同一个 HTTPS 域名", null)
+        if (base == null || login == null ||
+            !Wenku8UrlPolicy.isAllowedSourcePage(loginUrl, baseUrl, allowedHosts)) {
+            result.error("SOURCE_LOGIN_URL", "登录网址必须属于书源主域名或明确配置的 HTTPS 登录白名单", null)
             return
         }
         pendingSourceLogin = result
@@ -217,6 +236,48 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
             } catch (_: Exception) {
                 main.post { result.error("WEB_NETWORK_ERROR", "网络请求失败，请检查网络后重试", null) }
             }
+        }
+    }
+
+    private fun dispatchSource(result: MethodChannel.Result, work: () -> Any?) {
+        try {
+            sourceWorker.execute {
+                try {
+                    val value = work()
+                    main.post { result.success(value) }
+                } catch (failure: WebFailure) {
+                    main.post { result.error(failure.code, failure.message, null) }
+                } catch (_: Exception) {
+                    main.post { result.error("SOURCE_NETWORK_ERROR", "书源网络请求失败，请检查网络后重试", null) }
+                }
+            }
+        } catch (_: RejectedExecutionException) {
+            result.error("SOURCE_BUSY", "书源请求过多，请稍后重试", null)
+        }
+    }
+
+    private fun dispatchSourceImage(result: MethodChannel.Result, work: () -> Any?) {
+        try {
+            sourceImageWorker.execute {
+                try {
+                    val value = work()
+                    main.post { result.success(value) }
+                } catch (failure: WebFailure) {
+                    main.post { result.error(failure.code, failure.message, null) }
+                } catch (_: Exception) {
+                    main.post { result.error("SOURCE_IMAGE_ERROR", "书源图片加载失败，请稍后重试", null) }
+                }
+            }
+        } catch (_: RejectedExecutionException) {
+            result.error("SOURCE_BUSY", "图片请求过多，请稍后重试", null)
+        }
+    }
+
+    private fun sourceHostState(host: String): SourceHostState {
+        val key = host.lowercase()
+        sourceHostStates[key]?.let { return it }
+        return synchronized(sourceHostStates) {
+            sourceHostStates[key] ?: SourceHostState().also { sourceHostStates[key] = it }
         }
     }
 
@@ -306,6 +367,7 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
     private fun requestSource(
         rawUrl: String,
         rawBaseUrl: String,
+        requestHosts: List<String>,
         imageHosts: List<String>,
         maxBytes: Int,
         image: Boolean,
@@ -315,169 +377,214 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
     ): Reply {
         val origin = runCatching { URL(rawBaseUrl) }
             .getOrElse { throw WebFailure("SOURCE_BAD_URL", "书源网站地址无效") }
-        if (!safeHttps(origin)) {
-            throw WebFailure("SOURCE_BAD_URL", "书源网站必须使用 HTTPS")
-        }
-        val allowedHosts = imageHosts.map { it.trim().lowercase() }
-            .filter { it.matches(Regex("^[a-z0-9.-]{1,253}$")) }
-            .toSet() + origin.host.lowercase()
+        if (!safeHttps(origin)) throw WebFailure("SOURCE_BAD_URL", "书源网站必须使用 HTTPS")
+        val validHost = Regex("""^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$""")
+        val allowedRequestHosts = requestHosts.map { it.trim().lowercase() }
+            .filter { validHost.matches(it) }.toSet() + origin.host.lowercase()
+        val allowedImageHosts = imageHosts.map { it.trim().lowercase() }
+            .filter { validHost.matches(it) }.toSet() + origin.host.lowercase()
         var current = runCatching { URL(rawUrl) }
             .getOrElse { throw WebFailure("SOURCE_BAD_URL", "书源网页地址无效") }
-        if (!sourceAllowed(current, origin, allowedHosts, image)) {
-            throw WebFailure("SOURCE_BAD_URL", "书源链接超出了配置的网站域名或图片 CDN")
+        if (!sourceAllowed(current, origin, allowedRequestHosts, allowedImageHosts, image)) {
+            throw WebFailure("SOURCE_BAD_URL", "书源链接超出了配置的请求域名或图片 CDN")
         }
 
-        for (hop in 0..4) {
-            waitForSourceRequestSlot()
-            val connection = try {
-                current.openConnection() as HttpURLConnection
-            } catch (failure: Exception) {
-                throw sourceNetworkFailure(origin, failure)
-            }
-            try {
-                connection.requestMethod = method
-                connection.connectTimeout = 12_000
-                connection.readTimeout = 20_000
-                connection.instanceFollowRedirects = false
-                connection.setRequestProperty("User-Agent", userAgent)
-                connection.setRequestProperty("Accept-Encoding", "gzip")
-                connection.setRequestProperty("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
-                connection.setRequestProperty(
-                    "Accept",
-                    if (image) "image/avif,image/webp,image/apng,image/*,*/*;q=0.8"
-                    else if (method == "POST") "application/json, text/plain, */*"
-                    else "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                )
-                if (sameOrigin(current, origin)) {
+        val hostState = sourceHostState(origin.host)
+        if (!image) hostState.textSemaphore.acquire()
+        var currentMethod = method
+        var currentBody = requestBody
+        try {
+            for (hop in 0..4) {
+                waitForSourceRequestSlot(hostState, image)
+                val connection = try {
+                    current.openConnection() as HttpURLConnection
+                } catch (failure: Exception) {
+                    throw sourceNetworkFailure(origin, failure)
+                }
+                try {
+                    connection.requestMethod = currentMethod
+                    connection.connectTimeout = 12_000
+                    connection.readTimeout = 20_000
+                    connection.instanceFollowRedirects = false
+                    connection.setRequestProperty("User-Agent", userAgent)
+                    connection.setRequestProperty("Accept-Encoding", "gzip")
+                    connection.setRequestProperty("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+                    connection.setRequestProperty("Accept", if (image)
+                        "image/avif,image/webp,image/apng,image/*,*/*;q=0.8"
+                    else if (currentMethod == "POST")
+                        "application/json, text/plain, */*"
+                    else "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
                     connection.setRequestProperty("Referer", rawBaseUrl)
-                    Wenku8SessionCookies.cookieHeader(current.toString())?.let {
-                        connection.setRequestProperty("Cookie", it)
+                    if (!image) {
+                        Wenku8SessionCookies.cookieHeader(current.toString())?.let {
+                            connection.setRequestProperty("Cookie", it)
+                        }
                     }
-                }
-                if (method == "POST") {
-                    connection.doOutput = true
-                    connection.setRequestProperty("Content-Type", contentType ?: "application/json; charset=UTF-8")
-                    connection.setRequestProperty("X-Requested-With", "XMLHttpRequest")
-                    connection.setRequestProperty("Origin", origin.protocol + "://" + origin.host)
-                    requestBody?.let { bytes ->
-                        connection.outputStream.use { output -> output.write(bytes) }
+                    if (currentMethod == "POST") {
+                        connection.doOutput = true
+                        connection.setRequestProperty("Content-Type", contentType ?: "application/json; charset=UTF-8")
+                        connection.setRequestProperty("X-Requested-With", "XMLHttpRequest")
+                        connection.setRequestProperty("Origin", origin.protocol + "://" + origin.host)
+                        currentBody?.let { bytes ->
+                            connection.outputStream.use { output -> output.write(bytes) }
+                        }
                     }
-                }
 
-                val status = connection.responseCode
-                val cookies = connection.headerFields.entries
-                    .filter { it.key?.equals("Set-Cookie", ignoreCase = true) == true }
-                    .flatMap { it.value ?: emptyList() }
-                if (!image && cookies.isNotEmpty() && sameOrigin(current, origin)) {
-                    Wenku8SessionCookies.absorbSource(current.toString(), rawBaseUrl, cookies)
-                }
-
-                if (status in setOf(301, 302, 303, 307, 308)) {
-                    val location = connection.getHeaderField("Location")
-                        ?: throw WebFailure("SOURCE_REDIRECT_ERROR", "书源网站返回了无效跳转")
-                    val next = runCatching { URL(current, location) }
-                        .getOrElse { throw WebFailure("SOURCE_REDIRECT_ERROR", "书源网站返回了无效跳转") }
-                    if (!sourceAllowed(next, origin, allowedHosts, image)) {
-                        throw WebFailure("SOURCE_REDIRECT_BLOCKED", "书源网站跳转到了未配置的域名，已阻止请求")
+                    val status = connection.responseCode
+                    val cookies = connection.headerFields.entries
+                        .filter { it.key?.equals("Set-Cookie", ignoreCase = true) == true }
+                        .flatMap { it.value ?: emptyList() }
+                    if (!image && cookies.isNotEmpty()) {
+                        Wenku8SessionCookies.absorbSource(current.toString(), rawBaseUrl, allowedRequestHosts.toList(), cookies)
                     }
-                    current = next
-                    continue
-                }
+                    if (status in setOf(301, 302, 303, 307, 308)) {
+                        val location = connection.getHeaderField("Location")
+                            ?: throw WebFailure("SOURCE_REDIRECT_ERROR", "书源网站返回了无效跳转")
+                        val next = runCatching { URL(current, location) }
+                            .getOrElse { throw WebFailure("SOURCE_REDIRECT_ERROR", "书源网站返回了无效跳转") }
+                        if (!sourceAllowed(next, origin, allowedRequestHosts, allowedImageHosts, image)) {
+                            throw WebFailure("SOURCE_REDIRECT_BLOCKED", "书源网站跳转到了未配置的域名，已阻止请求")
+                        }
+                        if (status in setOf(301, 302, 303) && currentMethod == "POST") {
+                            currentMethod = "GET"
+                            currentBody = null
+                        }
+                        current = next
+                        continue
+                    }
 
-                val stream = if (status in 200..299) connection.inputStream
-                    else connection.errorStream ?: ByteArrayInputStream(byteArrayOf())
-                val raw = stream.use { input ->
-                    val decoded = if (connection.contentEncoding?.contains("gzip", ignoreCase = true) == true) {
-                        GZIPInputStream(input)
-                    } else input
-                    readBounded(decoded, maxBytes)
+                    val stream = if (status in 200..299) connection.inputStream
+                        else connection.errorStream ?: ByteArrayInputStream(byteArrayOf())
+                    val raw = stream.use { input ->
+                        val decoded = if (connection.contentEncoding?.contains("gzip", ignoreCase = true) == true)
+                            GZIPInputStream(input) else input
+                        readBounded(decoded, maxBytes)
+                    }
+                    val responseContentType = connection.contentType
+                    if (status == 401) throw WebFailure("SOURCE_LOGIN_REQUIRED", "书源网站要求登录，请先完成该书源的独立登录")
+                    if (status == 403) {
+                        val body = if (image) "" else decode(raw, responseContentType)
+                        if (isChallenge(body)) throw WebFailure("SOURCE_CHALLENGE", "书源网站要求浏览器验证，请先在独立登录页面完成验证")
+                        if (!image && looksLikeSourceLoginPage(body)) throw WebFailure("SOURCE_LOGIN_REQUIRED", "书源网站要求登录，请先完成该书源的独立登录")
+                        throw WebFailure("SOURCE_BLOCKED", "书源网站拒绝了请求；可能需要登录、验证或调整网络线路")
+                    }
+                    if (status == 429) throw WebFailure("SOURCE_RATE_LIMITED", "书源网站请求过于频繁，请稍后重试")
+                    if (status !in 200..299) throw WebFailure("SOURCE_HTTP_ERROR", "书源网站返回 HTTP " + status)
+                    if (!image && isChallenge(decode(raw, responseContentType))) {
+                        throw WebFailure("SOURCE_CHALLENGE", "书源网站要求浏览器验证，请先在独立登录页面完成验证")
+                    }
+                    return Reply(raw, responseContentType, current.toString())
+                } catch (failure: WebFailure) {
+                    throw failure
+                } catch (failure: Exception) {
+                    throw sourceNetworkFailure(origin, failure)
+                } finally {
+                    connection.disconnect()
                 }
-                val contentType = connection.contentType
-                if (status == 403) {
-                    throw WebFailure("SOURCE_BLOCKED", "书源网站拒绝了请求，可能需要登录或完成网站验证")
-                }
-                if (status == 429) {
-                    throw WebFailure("SOURCE_RATE_LIMITED", "书源网站请求过于频繁，请稍后重试")
-                }
-                if (status !in 200..299) {
-                    throw WebFailure("SOURCE_HTTP_ERROR", "书源网站返回 HTTP " + status)
-                }
-                if (!image && isChallenge(decode(raw, contentType))) {
-                    throw WebFailure("SOURCE_CHALLENGE", "书源网站要求浏览器验证，请检查网站是否允许客户端访问")
-                }
-                return Reply(raw, contentType, current.toString())
-            } catch (failure: WebFailure) {
-                throw failure
-            } catch (failure: Exception) {
-                throw sourceNetworkFailure(origin, failure)
-            } finally {
-                connection.disconnect()
             }
+            throw WebFailure("SOURCE_REDIRECT_ERROR", "书源网站跳转次数过多")
+        } finally {
+            if (!image) hostState.textSemaphore.release()
         }
-        throw WebFailure("SOURCE_REDIRECT_ERROR", "书源网站跳转次数过多")
     }
 
-    private fun lightNovelSearch(rawBaseUrl: String, query: String, page: Int): String {
+    private fun lightNovelSession(rawBaseUrl: String, requestHosts: List<String>): LightNovelSession {
         val origin = runCatching { URL(rawBaseUrl) }
             .getOrElse { throw WebFailure("SOURCE_BAD_URL", "轻之国度网站地址无效") }
-        if (!safeHttps(origin) || !origin.host.equals("www.lightnovel.fun", ignoreCase = true)) {
-            throw WebFailure("SOURCE_BAD_URL", "轻之国度书源必须使用 https://www.lightnovel.fun/")
+        val siteHosts = setOf("www.lightnovel.fun", "lightnovel.fun")
+        if (!safeHttps(origin) || origin.host.lowercase() !in siteHosts) {
+            throw WebFailure("SOURCE_BAD_URL", "轻之国度书源必须使用 HTTPS 官方域名")
         }
-
-        // The site's token cookie may be scoped to /proxy rather than /.
-        // Read cookies for the actual API path so path-scoped auth is included.
-        val searchEndpoint = URL(origin, "/proxy/api/search/search-result").toString()
-        val cookies = Wenku8SessionCookies.cookieHeader(searchEndpoint).orEmpty()
-        val rawToken = cookies.split(';')
-            .map { it.trim() }
-            .firstOrNull { it.startsWith("token=") }
-            ?.substringAfter("token=")
-            .orEmpty()
-        if (rawToken.isBlank()) {
-            throw WebFailure("SOURCE_LOGIN_REQUIRED", "轻之国度搜索需要先登录：请在书源卡片点击“独立登录”")
-        }
-
-        var tokenText = rawToken
-        var securityKey = ""
-        repeat(3) {
-            val token = runCatching { JSONObject(tokenText) }.getOrNull()
-            if (token != null) {
-                securityKey = token.optString("security_key")
-                if (securityKey.isNotBlank()) return@repeat
+        val candidates = (listOf(origin.host) + requestHosts).map { it.trim().lowercase() }
+            .filter { it in siteHosts }.distinct()
+        for (host in candidates) {
+            val cookieUrl = "https://" + host + "/proxy/api/search/search-result"
+            val rawToken = Wenku8SessionCookies.cookieHeader(cookieUrl).orEmpty()
+                .split(';').map { it.trim() }.firstOrNull { it.startsWith("token=") }
+                ?.substringAfter('=').orEmpty()
+            if (rawToken.isBlank()) continue
+            var tokenText = rawToken
+            var securityKey = ""
+            var attempts = 0
+            while (attempts < 3) {
+                val token = runCatching { JSONObject(tokenText) }.getOrNull()
+                if (token != null) {
+                    securityKey = token.optString("security_key")
+                    if (securityKey.isNotBlank()) break
+                }
+                val decoded = runCatching { URLDecoder.decode(tokenText, "UTF-8") }.getOrDefault(tokenText)
+                if (decoded == tokenText) break
+                tokenText = decoded
+                attempts++
             }
-            tokenText = runCatching { URLDecoder.decode(tokenText, "UTF-8") }
-                .getOrDefault(tokenText)
+            if (securityKey.isNotBlank()) {
+                return LightNovelSession(host, securityKey, securityKey.split(':').getOrNull(1).orEmpty())
+            }
         }
-        if (securityKey.isBlank()) {
-            throw WebFailure("SOURCE_LOGIN_REQUIRED", "没有读取到轻之国度登录凭据，请重新完成网站登录")
-        }
+        throw WebFailure("SOURCE_LOGIN_REQUIRED", "没有读取到轻之国度登录凭据。请在书源卡片点击“独立登录”，确认登录完成后再重试")
+    }
 
+    private fun lightNovelSearch(rawBaseUrl: String, query: String, page: Int, requestHosts: List<String>): String {
+        val session = lightNovelSession(rawBaseUrl, requestHosts)
+        if (query.isBlank()) return lightNovelBrowse(rawBaseUrl, requestHosts, session, page)
         val payload = JSONObject()
-            .put("is_encrypted", 0)
-            .put("platform", "pc")
-            .put("client", "web")
-            .put("sign", "")
-            .put("gz", 0)
-            .put(
-                "d",
-                JSONObject()
-                    .put("q", query)
-                    .put("page", page)
-                    .put("type", 0)
-                    .put("security_key", securityKey),
-            )
-        val endpoint = URL(origin, "/proxy/api/search/search-result").toString()
-        val reply = requestSource(
-            endpoint,
-            rawBaseUrl,
-            emptyList(),
-            MAX_TEXT_BYTES,
-            image = false,
-            method = "POST",
-            requestBody = payload.toString().toByteArray(Charsets.UTF_8),
-            contentType = "application/json; charset=UTF-8",
-        )
+            .put("is_encrypted", 0).put("platform", "pc").put("client", "web").put("sign", "").put("gz", 0)
+            .put("d", JSONObject().put("q", query).put("page", page).put("type", 0).put("security_key", session.securityKey))
+        val endpoint = "https://" + session.host + "/proxy/api/search/search-result"
+        val reply = requestSource(endpoint, rawBaseUrl, requestHosts, emptyList(), MAX_TEXT_BYTES,
+            image = false, method = "POST", requestBody = payload.toString().toByteArray(Charsets.UTF_8),
+            contentType = "application/json; charset=UTF-8")
         return decode(reply.bytes, reply.contentType)
+    }
+
+    private fun lightNovelBrowse(rawBaseUrl: String, requestHosts: List<String>, session: LightNovelSession, page: Int): String {
+        if (session.uid.isBlank()) throw WebFailure("SOURCE_LOGIN_REQUIRED", "轻之国度登录凭据不完整，请重新完成独立登录")
+        val baseBody = JSONObject()
+            .put("is_encrypted", 0).put("platform", "pc").put("client", "web").put("sign", "").put("gz", 0)
+            .put("d", JSONObject().put("uid", session.uid).put("page", page.toString())
+                .put("security_key", session.securityKey).put("parent_gid", 3))
+        val categoryEndpoint = "https://" + session.host + "/proxy/api/category/get-categories"
+        val categoryReply = requestSource(categoryEndpoint, rawBaseUrl, requestHosts, emptyList(), MAX_TEXT_BYTES,
+            image = false, method = "POST", requestBody = baseBody.toString().toByteArray(Charsets.UTF_8),
+            contentType = "application/json; charset=UTF-8")
+        val categoryJson = runCatching { JSONObject(decode(categoryReply.bytes, categoryReply.contentType)) }
+            .getOrElse { throw WebFailure("SOURCE_API_ERROR", "轻之国度首页分类接口没有返回有效 JSON") }
+        val categoryCode = categoryJson.opt("code")
+        if (categoryCode != null && categoryCode.toString() !in setOf("0", "200")) {
+            throw WebFailure("SOURCE_API_ERROR", "轻之国度首页分类读取失败：" + categoryJson.optString("message", categoryJson.optString("msg")))
+        }
+        val categories = categoryJson.optJSONArray("data") ?: categoryJson.optJSONObject("data")?.optJSONArray("list")
+            ?: throw WebFailure("SOURCE_API_ERROR", "轻之国度没有返回首页分类列表")
+        if (categories.length() == 0) throw WebFailure("SOURCE_API_ERROR", "轻之国度首页分类列表为空")
+        var selected: JSONObject? = null
+        for (index in 0 until categories.length()) {
+            val candidate = categories.optJSONObject(index) ?: continue
+            if (selected == null) selected = candidate
+            val name = candidate.optString("name")
+            if (name.contains("最近更新") || name.contains("新更") || name.contains("最新")) {
+                selected = candidate
+                break
+            }
+        }
+        val gid = selected?.opt("gid") ?: throw WebFailure("SOURCE_API_ERROR", "轻之国度首页分类缺少 gid")
+        val feedBody = JSONObject(baseBody.toString())
+        feedBody.getJSONObject("d").put("gid", gid).put("page", page.toString())
+        val feedEndpoint = "https://" + session.host + "/proxy/api/category/get-article-by-cate"
+        val feedReply = requestSource(feedEndpoint, rawBaseUrl, requestHosts, emptyList(), MAX_TEXT_BYTES,
+            image = false, method = "POST", requestBody = feedBody.toString().toByteArray(Charsets.UTF_8),
+            contentType = "application/json; charset=UTF-8")
+        val feedJson = runCatching { JSONObject(decode(feedReply.bytes, feedReply.contentType)) }
+            .getOrElse { throw WebFailure("SOURCE_API_ERROR", "轻之国度首页列表接口没有返回有效 JSON") }
+        val feedCode = feedJson.opt("code")
+        if (feedCode != null && feedCode.toString() !in setOf("0", "200")) {
+            throw WebFailure("SOURCE_API_ERROR", "轻之国度首页列表读取失败：" + feedJson.optString("message", feedJson.optString("msg")))
+        }
+        val feedData = feedJson.optJSONObject("data") ?: throw WebFailure("SOURCE_API_ERROR", "轻之国度首页列表缺少 data")
+        val list = feedData.optJSONArray("list") ?: feedData.optJSONArray("collections") ?: org.json.JSONArray()
+        val normalized = JSONObject().put("collections", list).put("articles", org.json.JSONArray())
+        val pagination = feedData.optJSONObject("pagination") ?: feedData.optJSONObject("page_info")
+        if (pagination != null) normalized.put("pagination", pagination)
+        return JSONObject().put("code", 0).put("data", normalized).toString()
     }
 
     private fun safeHttps(url: URL): Boolean =
@@ -500,7 +607,7 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
             else -> "网络连接中断"
         }
         val hint = if (origin.host.endsWith("lightnovel.fun", ignoreCase = true)) {
-            "当前网络可能无法直连轻之国度；请先确认同一地址能否在系统浏览器打开，并检查代理分流是否覆盖 lightnovel.fun。"
+            "当前网络可能无法直连轻之国度；请先确认同一地址能否在系统浏览器打开。若使用分应用代理，请确认本 App 未被排除；若使用域名分流，请将 lightnovel.fun 加入代理规则。"
         } else {
             "请检查当前网络、DNS 和网站地址后重试。"
         }
@@ -510,25 +617,25 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
     private fun sourceAllowed(
         url: URL,
         origin: URL,
-        allowedHosts: Set<String>,
+        requestHosts: Set<String>,
+        imageHosts: Set<String>,
         image: Boolean,
     ): Boolean {
         if (!safeHttps(url)) return false
-        return if (image) {
-            val host = url.host.lowercase()
-            allowedHosts.any { allowed ->
-                host == allowed || host.endsWith(".$allowed")
-            }
-        } else {
-            sameOrigin(url, origin)
-        }
+        val host = url.host.lowercase()
+        return if (image) imageHosts.any { allowed -> host == allowed || host.endsWith(".$allowed") }
+        else Wenku8UrlPolicy.isAllowedSourceRequest(url.toString(), origin.toString(), requestHosts.toList())
     }
 
-    private fun waitForSourceRequestSlot() {
-        val now = SystemClock.elapsedRealtime()
-        val delay = 500L - (now - lastSourceRequestAt)
-        if (lastSourceRequestAt != 0L && delay > 0) Thread.sleep(delay)
-        lastSourceRequestAt = SystemClock.elapsedRealtime()
+    private fun waitForSourceRequestSlot(state: SourceHostState, image: Boolean) {
+        synchronized(state.lastRequestAt) {
+            val now = SystemClock.elapsedRealtime()
+            val last = state.lastRequestAt.get()
+            val interval = if (image) 100L else 200L
+            val delay = interval - (now - last)
+            if (last != 0L && delay > 0) Thread.sleep(delay)
+            state.lastRequestAt.set(SystemClock.elapsedRealtime())
+        }
     }
 
     private fun allowed(url: URL, image: Boolean): Boolean =
@@ -587,6 +694,13 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
             text.contains("attention required")
     }
 
+    private fun looksLikeSourceLoginPage(body: String): Boolean {
+        val text = body.lowercase()
+        val hasLogin = text.contains("login") || text.contains("登录") || text.contains("登入")
+        val hasPassword = text.contains("password") || text.contains("passwd") || text.contains("密码")
+        return hasLogin && hasPassword
+    }
+
     private fun looksLikeLoginPage(body: String, url: URL): Boolean {
         if (url.path.endsWith("/login.php", ignoreCase = true)) return true
         val text = body.lowercase()
@@ -640,6 +754,8 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
         channel?.setMethodCallHandler(null)
         channel = null
         worker.shutdownNow()
+        sourceWorker.shutdownNow()
+        sourceImageWorker.shutdownNow()
         detachActivity()
     }
 

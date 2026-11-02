@@ -8,7 +8,10 @@ import android.view.Gravity
 import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
+import android.webkit.SslErrorHandler
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -24,6 +27,7 @@ class CustomSourceLoginActivity : Activity() {
     private lateinit var base: Uri
     private lateinit var loginUrl: String
     private var allowedHosts: List<String> = emptyList()
+    private var pageError: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -66,6 +70,15 @@ class CustomSourceLoginActivity : Activity() {
             ViewGroup.LayoutParams.WRAP_CONTENT,
             1f,
         ))
+        val reload = Button(this).apply {
+            text = "重试"
+            setOnClickListener {
+                pageError = null
+                status.text = "正在重新加载网站…"
+                browser.reload()
+            }
+        }
+        toolbar.addView(reload)
         toolbar.addView(done)
 
         status = TextView(this).apply {
@@ -92,17 +105,62 @@ class CustomSourceLoginActivity : Activity() {
                     request: WebResourceRequest?,
                 ): Boolean {
                     val target = request?.url?.toString() ?: return true
-                    if (safePage(target)) return false
+                    if (safePage(target) || Wenku8UrlPolicy.isAllowedChallengeUrl(target)) return false
+                    val blockedHost = request?.url?.host ?: "未知域名"
+                    pageError = "已拦截未配置的登录跳转域名：$blockedHost。请在书源设置的“登录跳转域名白名单”中添加该 HTTPS 主机名后重试。"
+                    status.text = pageError
                     Toast.makeText(
                         this@CustomSourceLoginActivity,
-                        "为隔离账号，只允许访问此书源配置的 HTTPS 域名",
-                        Toast.LENGTH_SHORT,
+                        "登录跳转域名未加入白名单：$blockedHost",
+                        Toast.LENGTH_LONG,
                     ).show()
                     return true
                 }
 
+                override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                    super.onPageStarted(view, url, favicon)
+                    pageError = null
+                    status.text = "正在加载网站页面…"
+                }
+
+                override fun onReceivedError(
+                    view: WebView?,
+                    request: WebResourceRequest?,
+                    error: WebResourceError?,
+                ) {
+                    super.onReceivedError(view, request, error)
+                    if (request?.isForMainFrame == true) {
+                        pageError = "网页加载失败：${error?.description ?: "网络连接异常"}。请检查网络和代理分流，然后点击“重试”。"
+                        status.text = pageError
+                    }
+                }
+
+                override fun onReceivedHttpError(
+                    view: WebView?,
+                    request: WebResourceRequest?,
+                    errorResponse: WebResourceResponse?,
+                ) {
+                    super.onReceivedHttpError(view, request, errorResponse)
+                    if (request?.isForMainFrame == true) {
+                        val code = errorResponse?.statusCode ?: 0
+                        pageError = "网站返回 HTTP $code。若为 403，可能需要完成网站验证；若为 429，请稍后重试。"
+                        status.text = pageError
+                    }
+                }
+
+                override fun onReceivedSslError(
+                    view: WebView?,
+                    handler: SslErrorHandler?,
+                    error: android.net.http.SslError?,
+                ) {
+                    handler?.cancel()
+                    pageError = "HTTPS 证书验证失败，已安全停止加载。请检查系统时间、网络或网站证书。"
+                    status.text = pageError
+                }
+
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
+                    if (pageError != null) return
                     status.text = if (hasSourceCookie(url)) {
                         "已检测到此网站的登录凭据。确认登录成功后，点击右上角“完成登录”。"
                     } else {
@@ -122,17 +180,8 @@ class CustomSourceLoginActivity : Activity() {
         browser.loadUrl(loginUrl)
     }
 
-    private fun safePage(raw: String): Boolean {
-        val uri = runCatching { Uri.parse(raw) }.getOrNull() ?: return false
-        val host = uri.host?.lowercase() ?: return false
-        val baseHost = base.host?.lowercase() ?: return false
-        val allowed = (allowedHosts + baseHost).map { it.trim().lowercase() }.toSet()
-        val targetPort = if (uri.port == -1) 443 else uri.port
-        return uri.scheme == "https" &&
-            host in allowed &&
-            targetPort == 443 &&
-            uri.userInfo == null
-    }
+    private fun safePage(raw: String): Boolean =
+        Wenku8UrlPolicy.isAllowedSourcePage(raw, base.toString(), allowedHosts)
 
     private fun hasSourceCookie(currentUrl: String?): Boolean {
         if (base.host.equals("www.lightnovel.fun", ignoreCase = true) ||

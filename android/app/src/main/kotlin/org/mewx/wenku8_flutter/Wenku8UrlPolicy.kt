@@ -16,6 +16,33 @@ internal object Wenku8UrlPolicy {
         RegexOption.IGNORE_CASE,
     )
 
+    private fun isAllowedSourceHttpsUrl(raw: String, baseUrl: String, allowedHosts: List<String>): Boolean {
+        val uri = parse(raw) ?: return false
+        val base = parse(baseUrl) ?: return false
+        if (!base.scheme.equals("https", ignoreCase = true) ||
+            base.userInfo != null ||
+            (base.port != -1 && base.port != 443)) return false
+        val validHost = Regex(
+            """^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$""",
+        )
+        val hosts = (allowedHosts.take(12) + listOfNotNull(base.host))
+            .map { it.trim().lowercase() }
+            .filter { validHost.matches(it) }
+            .toSet()
+        val path = uri.rawPath
+        return uri.scheme.equals("https", ignoreCase = true) &&
+            uri.host?.lowercase()?.let { it in hosts } == true &&
+            uri.userInfo == null &&
+            (uri.port == -1 || uri.port == 443) &&
+            (path.isNullOrEmpty() || path.startsWith("/"))
+    }
+
+    fun isAllowedSourcePage(raw: String, baseUrl: String, allowedHosts: List<String>): Boolean =
+        isAllowedSourceHttpsUrl(raw, baseUrl, allowedHosts)
+
+    fun isAllowedSourceRequest(raw: String, baseUrl: String, requestHosts: List<String>): Boolean =
+        isAllowedSourceHttpsUrl(raw, baseUrl, requestHosts)
+
     fun isOfficialPage(raw: String): Boolean {
         val uri = parse(raw) ?: return false
         return uri.scheme.equals("https", ignoreCase = true) &&

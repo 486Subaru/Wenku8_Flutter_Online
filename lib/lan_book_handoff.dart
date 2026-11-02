@@ -219,7 +219,7 @@ class LanBookHandoff extends ChangeNotifier {
         }
         throw const FormatException('另一台设备暂未接受传输，请保持 App 在前台后重试');
       }
-      return cipher.open(await _sync._read(response), '$kind-reply');
+      return await cipher.open(await _sync._read(response), '$kind-reply');
     } finally {
       if (identical(_sending, request)) _sending = null;
     }

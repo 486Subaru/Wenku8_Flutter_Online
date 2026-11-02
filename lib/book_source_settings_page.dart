@@ -120,7 +120,7 @@ class BookSourceSettingsPage extends StatelessWidget {
                   shrinkWrap: true,
                   children: [
                     option(official, '轻小说文库（默认）', 'www.wenku8.cc'),
-                    for (final source in store.sources)
+                    for (final source in store.sources.where((source) => source.supportsReading))
                       option(source.id, source.name, source.baseUrl),
                   ],
                 ),

@@ -73,13 +73,14 @@ void main() {
     expect(readerSource.loginHosts, contains('lightnovel.fun'));
     expect(readerSource.requestHosts, contains('lightnovel.fun'));
     await store.setLoginSourceId(readerSource.id);
-    expect(store.homepageSourceId, isNull);
+    expect(store.homepageSourceId, 'lightnovel-fun');
 
     final browserOnly = await store.installPreset('linovelib-web');
     expect(browserOnly.supportsReading, isFalse);
     await store.setLoginSourceId(browserOnly.id);
     expect(store.loginSourceId, browserOnly.id);
-    expect(store.homepageSourceId, isNull);
+    // A login-only site cannot replace the current readable homepage source.
+    expect(store.homepageSourceId, 'lightnovel-fun');
     expect(
       store.enabledSources.map((source) => source.id),
       isNot(contains(browserOnly.id)),

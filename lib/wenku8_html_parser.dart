@@ -139,6 +139,7 @@ abstract final class Wenku8HtmlParser {
     final root = document.querySelector('#content') ??
         document.body ??
         document.documentElement;
+    if (root == null) return null;
     final pageTitle = _oneLine(document.querySelector('title')?.text ?? '');
     final heading = _oneLine(
       root.querySelector('h1')?.text ??

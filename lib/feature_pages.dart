@@ -255,7 +255,9 @@ class _WenkuAccountPageState extends State<WenkuAccountPage> {
                 style: TextStyle(fontSize: 21, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 8),
-              const AppText('默认使用轻小说文库，也可以选择已配置独立登录网址的书源。'),
+              const AppText(
+                '可直接选择内置网站预设，无需手动填写配置。标注“仅网页登录入口”的网站目前尚未接入 App 内搜索和阅读，不会替换当前主页书源。',
+              ),
               const SizedBox(height: 18),
               ConstrainedBox(
                 constraints: BoxConstraints(
@@ -265,8 +267,14 @@ class _WenkuAccountPageState extends State<WenkuAccountPage> {
                   shrinkWrap: true,
                   children: [
                     option(official, '轻小说文库（默认）', 'www.wenku8.net'),
-                    for (final source in store.loginSources)
-                      option(source.id, source.name, source.baseUrl),
+                    for (final source in store.loginOptions)
+                      option(
+                        source.id,
+                        source.name,
+                        source.supportsReading
+                            ? source.baseUrl
+                            : '${source.baseUrl} · 仅网页登录入口',
+                      ),
                   ],
                 ),
               ),
@@ -282,12 +290,20 @@ class _WenkuAccountPageState extends State<WenkuAccountPage> {
     );
     if (selected == null) return;
     try {
-      await store.setLoginSourceId(selected == official ? null : selected);
+      final selectedSource = selected == official
+          ? null
+          : await store.installPreset(selected);
+      await store.setLoginSourceId(selectedSource?.id);
       if (mounted) {
-        final name = selected == official
-            ? '轻小说文库（默认）'
-            : store.byId(selected)?.name ?? '所选网站';
-        showNovelFeedback(context, '登录网站已切换为 $name，主页书源已同步');
+        final name = selectedSource?.name ?? '轻小说文库（默认）';
+        showNovelFeedback(
+          context,
+          selectedSource == null
+              ? '登录网站已切换为 $name'
+              : selectedSource.supportsReading
+                  ? '登录网站已切换为 $name，主页书源已同步'
+                  : '已选择 $name；当前仅提供网页登录入口，主页书源保持不变',
+        );
       }
     } catch (error) {
       if (mounted) {
@@ -321,7 +337,12 @@ class _WenkuAccountPageState extends State<WenkuAccountPage> {
       }
       await store!.completeSourceLogin(source.id);
       if (mounted) {
-        showNovelFeedback(context, '已完成 ${source.name} 登录，主页书源已切换');
+        showNovelFeedback(
+          context,
+          source.supportsReading
+              ? '已完成 ${source.name} 登录，主页书源已切换'
+              : '已完成 ${source.name} 网页登录；该站尚未接入 App 内阅读，主页书源保持不变',
+        );
       }
     } catch (error) {
       if (mounted) {
@@ -413,9 +434,13 @@ class _WenkuAccountPageState extends State<WenkuAccountPage> {
                       ? connected
                           ? '文库官网登录状态已保存在本机。在线书目与阅读使用文库主站。'
                           : '打开文库官网后，在网站页面完成登录或注册。账号密码和网站验证都由官网处理。'
-                      : connected
-                          ? '${loginSource.name} 的独立登录状态已保存。主页书源已同步到该网站。'
-                          : '登录将在该网站的独立页面中完成。该网站 Cookie 与文库主站分开保存；选择此网站后，主页书源也会同步切换。',
+                      : !loginSource.supportsReading
+                          ? connected
+                              ? '${loginSource.name} 的网页登录状态已保存在本机。该站尚未接入 App 内搜索和阅读，主页书源保持不变。'
+                              : '登录将在该网站的独立页面中完成。Cookie 与文库主站分开保存；该站目前仅提供网页登录入口，不会替换主页书源。'
+                          : connected
+                              ? '${loginSource.name} 的独立登录状态已保存。主页书源已同步到该网站。'
+                              : '登录将在该网站的独立页面中完成。该网站 Cookie 与文库主站分开保存；选择此网站后，主页书源也会同步切换。',
                 ),
                 const SizedBox(height: 24),
                 if (!connected)

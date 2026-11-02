@@ -166,11 +166,44 @@ abstract final class LegacyTransport {
   static Future<void> setUpdatePriority(bool enabled) async {}
 
   static Future<Uint8List> Function(String) illustrationReader = getBytes;
+  static final Map<String, ({String baseUrl, List<String> imageHosts})>
+      _sourceImageOrigins = {};
+
+  static void configureSourceImageOrigins(
+    Iterable<({String baseUrl, List<String> imageHosts})> sources,
+  ) {
+    _sourceImageOrigins.clear();
+    for (final source in sources) {
+      final base = Uri.tryParse(source.baseUrl);
+      if (base == null || base.host.isEmpty) continue;
+      final record = (
+        baseUrl: source.baseUrl,
+        imageHosts: List<String>.unmodifiable(source.imageHosts),
+      );
+      _sourceImageOrigins[base.host.toLowerCase()] = record;
+      for (final host in source.imageHosts) {
+        _sourceImageOrigins[host.toLowerCase()] = record;
+      }
+    }
+  }
 
   static Future<Uint8List> illustration(
     String url, {
     bool cacheForViewing = true,
-  }) => illustrationReader(url);
+  }) {
+    final uri = Uri.tryParse(url);
+    final source = uri == null
+        ? null
+        : _sourceImageOrigins[uri.host.toLowerCase()];
+    if (source != null) {
+      return getSourceBytes(
+        url,
+        baseUrl: source.baseUrl,
+        imageHosts: source.imageHosts,
+      );
+    }
+    return illustrationReader(url);
+  }
 
   static Future<void> clearIllustrations() async {}
 }

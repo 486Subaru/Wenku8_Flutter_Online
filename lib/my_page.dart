@@ -61,6 +61,8 @@ class MyPage extends StatelessWidget {
                   final account = features?.account;
                   final profile = account?.profile;
                   final loginSource = bookSources?.loginSource;
+                  final homepageMatchesLogin = loginSource != null &&
+                      bookSources?.homepageSourceId == loginSource.id;
                   final sourceConnected = loginSource == null
                       ? account?.authenticated == true
                       : bookSources!.isSourceLoggedIn(loginSource.id);
@@ -148,8 +150,10 @@ class MyPage extends StatelessWidget {
                                 sourceConnected
                                     ? loginSource != null
                                           ? loginSource.supportsReading
-                                              ? '${loginSource.name}账号已连接 · 主页书源已同步'
-                                              : '${loginSource.name}网页登录已连接 · 阅读使用当前书源'
+                                              ? homepageMatchesLogin
+                                                  ? loginSource.name + '账号已连接 · 主页正在使用此书源'
+                                                  : loginSource.name + '账号已连接 · 主页使用其他书源'
+                                              : loginSource.name + '网页登录已连接 · 阅读使用当前书源'
                                           : profile == null
                                               ? '账号已连接'
                                               : '${profile.score} 积分 · ${profile.rank}${features?.shelfSync == null

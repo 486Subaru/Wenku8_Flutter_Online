@@ -256,7 +256,7 @@ class _WenkuAccountPageState extends State<WenkuAccountPage> {
               ),
               const SizedBox(height: 8),
               const AppText(
-                '可直接选择内置网站预设，无需手动填写配置。登录网站与主页书源分别设置；登录某个网站不会自动更改主页书源。',
+                '可直接选择内置网站预设，无需手动填写配置。选择支持阅读的网站时，主页会同步切换到该书源；仅网页登录入口会保留当前主页书源。',
               ),
               const SizedBox(height: 18),
               ConstrainedBox(
@@ -299,8 +299,10 @@ class _WenkuAccountPageState extends State<WenkuAccountPage> {
         showNovelFeedback(
           context,
           selectedSource == null
-              ? '登录网站已切换为 $name；主页书源不变'
-              : '登录网站已切换为 $name；主页书源不变',
+              ? '登录网站与主页书源已切换为 $name'
+              : selectedSource.supportsReading
+                  ? '登录网站与主页书源已切换为 $name'
+                  : '登录网站已切换为 $name；该站仅提供网页登录，主页书源保持当前设置',
         );
       }
     } catch (error) {
@@ -326,6 +328,7 @@ class _WenkuAccountPageState extends State<WenkuAccountPage> {
       final accepted = await LegacyTransport.openSourceLogin(
         source.baseUri.resolve(source.loginUrl).toString(),
         baseUrl: source.baseUrl,
+        allowedHosts: source.loginHosts,
       );
       if (!accepted) {
         if (mounted) {
@@ -434,11 +437,11 @@ class _WenkuAccountPageState extends State<WenkuAccountPage> {
                           : '打开文库官网后，在网站页面完成登录或注册。账号密码和网站验证都由官网处理。'
                       : !loginSource.supportsReading
                           ? connected
-                              ? '${loginSource.name} 的网页登录状态已保存在本机。主页书源需在“书源管理”中单独选择。'
-                              : '登录将在该网站的独立页面中完成。Cookie 与文库主站分开保存；主页书源需在“书源管理”中单独选择。'
+                              ? loginSource.name + ' 的网页登录状态已保存在本机。主页仍使用当前可阅读书源。'
+                              : '登录将在该网站的独立页面中完成。Cookie 与文库主站分开保存；该网站仅提供网页登录入口。'
                           : connected
-                              ? '${loginSource.name} 的独立登录状态已保存。主页书源保持独立设置。'
-                              : '登录将在该网站的独立页面中完成。该网站 Cookie 与文库主站分开保存；主页书源需在“书源管理”中单独选择。',
+                              ? loginSource.name + ' 的独立登录状态已保存，主页书源已切换为该网站。'
+                              : '登录将在该网站的独立页面中完成。登录成功后主页书源会同步切换为该网站。',
                 ),
                 const SizedBox(height: 24),
                 if (!connected)

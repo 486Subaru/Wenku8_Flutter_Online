@@ -24,6 +24,46 @@ class BookSourceSettingsPage extends StatelessWidget {
     );
   }
 
+  Future<void> _testConnection(BuildContext context, BookSourceConfig source) async {
+    try {
+      final html = await LegacyTransport.getSourceText(
+        source.baseUrl,
+        baseUrl: source.baseUrl,
+        requestHosts: source.requestHosts,
+      );
+      if (source.engine == 'lightnovel_fun') {
+        try {
+          final page = await BookSourceRepository(source).browse(page: 1);
+          if (context.mounted) {
+            showNovelFeedback(
+              context,
+              '网络与轻之国度首页 API 正常，已读取 ' + page.items.length.toString() + ' 条内容',
+            );
+          }
+        } catch (error) {
+          if (context.mounted) {
+            showNovelFeedback(
+              context,
+              '网站首页可连接，但 API 或登录验证失败：' +
+                  error.toString().replaceFirst('FormatException: ', ''),
+            );
+          }
+        }
+        return;
+      }
+      if (context.mounted) {
+        showNovelFeedback(context, '网站网络连接正常，首页已读取 ' + html.length.toString() + ' 个字符');
+      }
+    } catch (error) {
+      if (context.mounted) {
+        showNovelFeedback(
+          context,
+          error.toString().replaceFirst('FormatException: ', ''),
+        );
+      }
+    }
+  }
+
   Future<void> _login(
     BuildContext context,
     BookSourceStore store,
@@ -322,6 +362,11 @@ class BookSourceSettingsPage extends StatelessWidget {
                       spacing: 8,
                       runSpacing: 8,
                       children: [
+                        _smallAction(
+                          context,
+                          '测试连接',
+                          () => _testConnection(context, source),
+                        ),
                         if (source.loginUrl.trim().isNotEmpty)
                           _smallAction(
                             context,

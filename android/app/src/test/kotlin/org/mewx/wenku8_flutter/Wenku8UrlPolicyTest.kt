@@ -53,7 +53,6 @@ class Wenku8UrlPolicyTest {
     }
 
     @Test
-    fun allowsOnlyCloudflareChallengePaths() {    @Test
     fun allowsHttpsCdnSubresourcesButRestrictsTopLevelNavigation() {
         val base = "https://www.lightnovel.fun/"
         val hosts = listOf("lightnovel.fun")
@@ -77,17 +76,14 @@ class Wenku8UrlPolicyTest {
         ))
     }
 
-
-        assertTrue(
-            Wenku8UrlPolicy.isAllowedChallengeUrl(
-                "https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/g/turnstile/if/ov2/av0/rcv",
-            ),
-        )
-        assertTrue(
-            Wenku8UrlPolicy.isAllowedChallengeUrl(
-                "https://challenges.cloudflare.com/turnstile/v0/api.js",
-            ),
-        )
+    @Test
+    fun allowsOnlyCloudflareChallengePaths() {
+        assertTrue(Wenku8UrlPolicy.isAllowedChallengeUrl(
+            "https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/g/turnstile/if/ov2/av0/rcv",
+        ))
+        assertTrue(Wenku8UrlPolicy.isAllowedChallengeUrl(
+            "https://challenges.cloudflare.com/turnstile/v0/api.js",
+        ))
         assertFalse(Wenku8UrlPolicy.isAllowedChallengeUrl("https://challenges.cloudflare.com/"))
         assertFalse(Wenku8UrlPolicy.isAllowedChallengeUrl("https://www.cloudflare.com/turnstile/v0/api.js"))
         assertFalse(Wenku8UrlPolicy.isAllowedChallengeUrl("http://challenges.cloudflare.com/turnstile/v0/api.js"))

@@ -510,6 +510,15 @@ class BookSourceStore extends ChangeNotifier {
     if (preferences.getString(homepageSourcePreferenceKey) == 'lightnovel-fun') {
       await preferences.remove(homepageSourcePreferenceKey);
     }
+    // Older builds marked a source as logged in after detecting any cookie.
+    // Reconfirm Light Novel Kingdom with its required token cookie instead.
+    final loggedIn = preferences.getStringList(loggedInSourcesPreferenceKey);
+    if (loggedIn != null && loggedIn.contains('lightnovel-fun')) {
+      await preferences.setStringList(
+        loggedInSourcesPreferenceKey,
+        loggedIn.where((id) => id != 'lightnovel-fun').toList(),
+      );
+    }
     await preferences.setBool(loginHomepageSeparationMigrationKey, true);
   }
 

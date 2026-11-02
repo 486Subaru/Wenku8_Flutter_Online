@@ -111,12 +111,14 @@ void main() {
         BookSourceStore.builtInPresets.first.toJson(),
       ]),
       BookSourceStore.homepageSourcePreferenceKey: 'lightnovel-fun',
+      BookSourceStore.loggedInSourcesPreferenceKey: ['lightnovel-fun'],
     });
     final preferences = await SharedPreferences.getInstance();
     final store = BookSourceStore(preferences);
 
     await store.load();
     expect(store.homepageSourceId, isNull);
+    expect(store.isSourceLoggedIn('lightnovel-fun'), isFalse);
     expect(
       preferences.getBool(BookSourceStore.loginHomepageSeparationMigrationKey),
       isTrue,

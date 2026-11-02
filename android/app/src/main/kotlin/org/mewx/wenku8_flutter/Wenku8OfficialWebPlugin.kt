@@ -148,7 +148,7 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
                     connection.setRequestProperty("Referer", referer)
                 }
                 if (!image && Wenku8UrlPolicy.isOfficialPage(current.toString())) {
-                    CookieManagerHolder.cookieFor(current.toString())?.let {
+                    Wenku8SessionCookies.cookieHeader(current.toString())?.let {
                         connection.setRequestProperty("Cookie", it)
                     }
                 }
@@ -304,8 +304,4 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
         detachActivity()
     }
 
-    private object CookieManagerHolder {
-        fun cookieFor(url: String): String? =
-            android.webkit.CookieManager.getInstance().getCookie(url)?.takeIf { it.isNotBlank() }
-    }
 }

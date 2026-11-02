@@ -624,10 +624,10 @@ class BookSourceRepository {
 
   Future<NovelPage> search(
     String keyword, {
-    _requireReaderSupport();
     int page = 1,
     String field = 'title',
   }) async {
+    _requireReaderSupport();
     if (page < 1 || page > 10000) {
       throw ArgumentError.value(page, 'page');
     }

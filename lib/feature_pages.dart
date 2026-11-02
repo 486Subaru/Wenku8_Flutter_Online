@@ -272,7 +272,13 @@ class _WenkuAccountPageState extends State<WenkuAccountPage> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 16),
+                GlassTextButton(
+                  key: const ValueKey('account-reverify'),
+                  onPressed: account.busy ? null : _login,
+                  child: const AppText('重新打开官网验证'),
+                ),
+                const SizedBox(height: 12),
                 GlassTextButton(
                   key: const ValueKey('account-logout'),
                   onPressed: account.busy ? null : _logout,
@@ -570,6 +576,7 @@ class _PublicationLibraryPageState extends State<PublicationLibraryPage> {
   PublicationLibrary? _selected;
   NovelFeedController? _feed;
   String? _error;
+  bool _needsLogin = false;
   late int _accountRevision;
   late int _publicationRevision;
   late bool _authenticated;
@@ -610,7 +617,10 @@ class _PublicationLibraryPageState extends State<PublicationLibraryPage> {
   }
 
   Future<void> _load() async {
-    setState(() => _error = null);
+    setState(() {
+      _error = null;
+      _needsLogin = false;
+    });
     try {
       // Restoring the shared account is part of entering this catalogue, not a
       // reason to issue a guest request and replace it again after restoration.
@@ -623,7 +633,13 @@ class _PublicationLibraryPageState extends State<PublicationLibraryPage> {
         _select(libraries.first);
       }
     } catch (error) {
-      if (mounted) setState(() => _error = WenkuAccount.describeError(error));
+      if (mounted) {
+        setState(() {
+          _error = WenkuAccount.describeError(error);
+          _needsLogin = error is OnlineAuthenticationRequired ||
+              error is OnlineChallengeRequired;
+        });
+      }
     }
   }
 
@@ -725,19 +741,33 @@ class _PublicationLibraryPageState extends State<PublicationLibraryPage> {
         onRetry: _feed!.retry,
       );
     }
-    if (failure is OnlineAuthenticationRequired && widget.account != null) {
+    if ((failure is OnlineAuthenticationRequired ||
+            failure is OnlineChallengeRequired) &&
+        widget.account != null) {
       return ContentNotice(
         icon: widget.account!.authenticated
             ? CupertinoIcons.arrow_clockwise
             : CupertinoIcons.person_crop_circle,
-        title: widget.account!.authenticated ? '分类暂未读取成功' : '此分类需要文库账号',
-        message: widget.account!.authenticated
-            ? '账号连接正常，分类服务暂未返回书目。请稍后重新加载。'
-            : '登录后可读取出版分类。最近更新、排行榜和搜索仍可直接使用。',
-        actionLabel: widget.account!.authenticated ? '重新加载' : '登录账号',
-        onRetry: widget.account!.authenticated
-            ? () => _select(_selected!, force: true)
-            : _loginForLibrary,
+        title: failure is OnlineChallengeRequired
+            ? '需要完成官网验证'
+            : widget.account!.authenticated
+                ? '分类暂未读取成功'
+                : '此分类需要文库账号',
+        message: failure is OnlineChallengeRequired
+            ? '请打开文库官网页面完成验证，再重新加载分类。'
+            : widget.account!.authenticated
+                ? '账号连接正常，分类服务暂未返回书目。请稍后重新加载。'
+                : '登录后可读取官网出版分类。',
+        actionLabel: failure is OnlineChallengeRequired
+            ? '打开官网验证'
+            : widget.account!.authenticated
+                ? '重新加载'
+                : '登录账号',
+        onRetry: failure is OnlineChallengeRequired
+            ? _loginForLibrary
+            : widget.account!.authenticated
+                ? () => _select(_selected!, force: true)
+                : _loginForLibrary,
       );
     }
     return DiscoverPage(
@@ -768,9 +798,12 @@ class _PublicationLibraryPageState extends State<PublicationLibraryPage> {
         ? (_error != null
               ? ContentNotice(
                   icon: CupertinoIcons.wifi_exclamationmark,
-                  title: '文库分类加载失败',
+                  title: _needsLogin ? '需要连接文库账号' : '文库分类加载失败',
                   message: _error!,
-                  onRetry: _load,
+                  actionLabel: _needsLogin ? '登录 / 官网验证' : '重试',
+                  onRetry: _needsLogin && widget.account != null
+                      ? _loginForLibrary
+                      : _load,
                 )
               : const LibrarySkeleton())
         : AnimatedBuilder(

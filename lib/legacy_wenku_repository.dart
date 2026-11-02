@@ -264,10 +264,10 @@ class LegacyWenkuRepository extends NovelRepository
   }
 
   Future<NovelPage> _loadPublication(int libraryId, int page) async {
-    final query = libraryId == 0
-        ? 'page=' + page.toString()
-        : 'class=' + libraryId.toString() + '&page=' + page.toString();
-    final url = _base + 'modules/article/articlelist.php?' + query;
+    final url = libraryId == 0
+        ? _base + 'modules/article/toplist.php?sort=lastupdate&page=' + page.toString()
+        : _base + 'modules/article/articlelist.php?class=' +
+            libraryId.toString() + '&page=' + page.toString();
     final source = await _request(url, referer: _base + 'index.php');
     final result = Wenku8HtmlParser.parseBookPage(source, page);
     _publicationPages[(libraryId, page)] = result;

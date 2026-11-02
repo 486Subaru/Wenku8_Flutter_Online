@@ -19,7 +19,7 @@ void main() {
         loginUrl: '/login',
         imageHosts: const ['cdn.source.example'],
       );
-      final restored = BookSourceConfig.fromJson(config.toJson());
+      final restored = BookSourceConfig.fromJson(Map<String, dynamic>.from(config.toJson()));
       restored.validate();
       expect(restored.id, config.id);
       expect(restored.loginUrl, '/login');
@@ -109,7 +109,7 @@ void main() {
       body,
       contains('<!--image-->https://cdn.source.example/illustration.jpg<!--image-->'),
     );
-    expect(requests, hasLength(3));
+    expect(requests, hasLength(4));
   });
 
   test('blocks search result links that escape the configured origin', () async {

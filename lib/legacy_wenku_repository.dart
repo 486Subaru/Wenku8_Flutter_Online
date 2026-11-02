@@ -203,7 +203,19 @@ class LegacyWenkuRepository extends NovelRepository
     final customFuture = field == BookSearchField.id
         ? Future.value(const <NovelPage>[])
         : _searchCustomSources(term, field: field, page: page);
-    final primary = await primaryFuture;
+    NovelPage primary;
+    try {
+      primary = await primaryFuture;
+    } catch (error) {
+      // The official Wenku8 site may be unavailable. Keep optional sources
+      // usable instead of letting a primary-site outage hide every result.
+      primary = NovelPage(
+        items: const [],
+        page: page,
+        totalPages: page,
+        searchFailures: {field: error},
+      );
+    }
     final customPages = await customFuture;
     final merged = <int, Novel>{
       for (final book in primary.items) book.id: book,

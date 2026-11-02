@@ -19,6 +19,9 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import java.net.URLDecoder
+import java.net.UnknownHostException
+import java.net.SocketTimeoutException
+import javax.net.ssl.SSLException
 import org.json.JSONObject
 import java.nio.ByteBuffer
 import java.nio.charset.Charset
@@ -326,7 +329,11 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
 
         for (hop in 0..4) {
             waitForSourceRequestSlot()
-            val connection = current.openConnection() as HttpURLConnection
+            val connection = try {
+                current.openConnection() as HttpURLConnection
+            } catch (failure: Exception) {
+                throw sourceNetworkFailure(origin, failure)
+            }
             try {
                 connection.requestMethod = method
                 connection.connectTimeout = 12_000
@@ -399,6 +406,10 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
                     throw WebFailure("SOURCE_CHALLENGE", "书源网站要求浏览器验证，请检查网站是否允许客户端访问")
                 }
                 return Reply(raw, contentType, current.toString())
+            } catch (failure: WebFailure) {
+                throw failure
+            } catch (failure: Exception) {
+                throw sourceNetworkFailure(origin, failure)
             } finally {
                 connection.disconnect()
             }
@@ -480,6 +491,21 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
             a.host.equals(b.host, ignoreCase = true) &&
             (if (a.port == -1) 443 else a.port) ==
                 (if (b.port == -1) 443 else b.port)
+
+    private fun sourceNetworkFailure(origin: URL, failure: Exception): WebFailure {
+        val reason = when (failure) {
+            is UnknownHostException -> "DNS 解析失败"
+            is SocketTimeoutException -> "连接超时"
+            is SSLException -> "HTTPS 握手失败"
+            else -> "网络连接中断"
+        }
+        val hint = if (origin.host.endsWith("lightnovel.fun", ignoreCase = true)) {
+            "当前网络可能无法直连轻之国度；请先确认同一地址能否在系统浏览器打开，并检查代理分流是否覆盖 lightnovel.fun。"
+        } else {
+            "请检查当前网络、DNS 和网站地址后重试。"
+        }
+        return WebFailure("SOURCE_NETWORK_ERROR", "$reason。$hint")
+    }
 
     private fun sourceAllowed(
         url: URL,

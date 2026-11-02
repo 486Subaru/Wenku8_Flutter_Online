@@ -165,7 +165,7 @@ class BookSourceConfig {
       throw const FormatException('登录跳转域名最多允许配置 12 个');
     }
     final validLoginHost = RegExp(
-      r'^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$',
+      r'^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:[.][a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$',
     );
     for (final host in loginHosts) {
       if (host != host.trim().toLowerCase() ||
@@ -556,12 +556,12 @@ class BookSourceStore extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    var migratedLoginHosts = false;
     try {
       final decoded = jsonDecode(raw);
       if (decoded is! List || decoded.length > 20) {
         throw const FormatException();
       }
-      var migratedLoginHosts = false;
       for (final item in decoded) {
         if (item is! Map<String, dynamic>) continue;
         final config = Map<String, dynamic>.from(item);

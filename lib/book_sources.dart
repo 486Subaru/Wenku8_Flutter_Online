@@ -26,6 +26,7 @@ class BookSourceConfig {
     this.enabled = true,
     this.loginUrl = '',
     this.searchLinkSelector = '',
+    this.searchNextPageSelector = '',
     this.searchAuthorSelector = '',
     this.searchGenreSelector = '',
     this.searchSummarySelector = '',
@@ -54,6 +55,7 @@ class BookSourceConfig {
   final String searchItemSelector;
   final String searchTitleSelector;
   final String searchLinkSelector;
+  final String searchNextPageSelector;
   final String searchAuthorSelector;
   final String searchGenreSelector;
   final String searchSummarySelector;
@@ -89,6 +91,7 @@ class BookSourceConfig {
     searchItemSelector: searchItemSelector,
     searchTitleSelector: searchTitleSelector,
     searchLinkSelector: searchLinkSelector,
+    searchNextPageSelector: searchNextPageSelector,
     searchAuthorSelector: searchAuthorSelector,
     searchGenreSelector: searchGenreSelector,
     searchSummarySelector: searchSummarySelector,
@@ -153,6 +156,7 @@ class BookSourceConfig {
       searchItemSelector,
       searchTitleSelector,
       searchLinkSelector,
+      searchNextPageSelector,
       searchAuthorSelector,
       searchGenreSelector,
       searchSummarySelector,
@@ -206,6 +210,7 @@ class BookSourceConfig {
     'searchItemSelector': searchItemSelector,
     'searchTitleSelector': searchTitleSelector,
     'searchLinkSelector': searchLinkSelector,
+    'searchNextPageSelector': searchNextPageSelector,
     'searchAuthorSelector': searchAuthorSelector,
     'searchGenreSelector': searchGenreSelector,
     'searchSummarySelector': searchSummarySelector,
@@ -240,6 +245,7 @@ class BookSourceConfig {
       searchItemSelector: string('searchItemSelector'),
       searchTitleSelector: string('searchTitleSelector'),
       searchLinkSelector: string('searchLinkSelector'),
+      searchNextPageSelector: string('searchNextPageSelector'),
       searchAuthorSelector: string('searchAuthorSelector'),
       searchGenreSelector: string('searchGenreSelector'),
       searchSummarySelector: string('searchSummarySelector'),
@@ -429,10 +435,13 @@ class BookSourceRepository {
         ),
       );
     }
+    final nextSelector = source.searchNextPageSelector.trim();
+    final nextLink = nextSelector.isEmpty ? null : _query(document, nextSelector);
+    final nextUrl = _resolvePage(nextLink?.attributes['href'] ?? '');
     return NovelPage(
       items: List.unmodifiable(books),
       page: page,
-      totalPages: null,
+      totalPages: nextSelector.isEmpty ? null : nextUrl == null ? page : null,
       totalItems: null,
     );
   }

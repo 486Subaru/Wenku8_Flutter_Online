@@ -234,9 +234,17 @@ abstract final class LegacyTransport {
     bool cacheForViewing = true,
   }) {
     final uri = Uri.tryParse(url);
-    final source = uri == null
+    var source = uri == null
         ? null
         : _sourceImageOrigins[uri.host.toLowerCase()];
+    if (source == null && uri != null) {
+      for (final entry in _sourceImageOrigins.entries) {
+        if (uri.host.toLowerCase().endsWith('.${entry.key}')) {
+          source = entry.value;
+          break;
+        }
+      }
+    }
     if (source != null) {
       return getSourceBytes(
         url,

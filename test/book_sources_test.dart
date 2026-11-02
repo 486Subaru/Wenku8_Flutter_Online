@@ -30,6 +30,42 @@ void main() {
     });
   });
 
+  test('offers built-in login presets and keeps browser-only sites off the reader', () async {
+    SharedPreferences.setMockInitialValues({});
+    final preferences = await SharedPreferences.getInstance();
+    final store = BookSourceStore(preferences);
+
+    expect(
+      store.loginOptions.map((source) => source.id),
+      containsAll([
+        'lightnovel-fun',
+        'linovelib-web',
+        'esjzone-web',
+        'linovel-net-web',
+      ]),
+    );
+
+    final readerSource = await store.installPreset('lightnovel-fun');
+    expect(readerSource.supportsReading, isTrue);
+    await store.setLoginSourceId(readerSource.id);
+    expect(store.homepageSourceId, readerSource.id);
+
+    final browserOnly = await store.installPreset('linovelib-web');
+    expect(browserOnly.supportsReading, isFalse);
+    await store.setLoginSourceId(browserOnly.id);
+    expect(store.loginSourceId, browserOnly.id);
+    expect(store.homepageSourceId, readerSource.id);
+    expect(
+      store.enabledSources.map((source) => source.id),
+      isNot(contains(browserOnly.id)),
+    );
+
+    await expectLater(
+      BookSourceRepository(browserOnly).search('测试'),
+      throwsFormatException,
+    );
+  });
+
   test('persists custom source configurations across app starts', () async {
     SharedPreferences.setMockInitialValues({});
     final preferences = await SharedPreferences.getInstance();

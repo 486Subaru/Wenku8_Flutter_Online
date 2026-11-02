@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import '../lib/book_sources.dart';
+import 'package:wenku8_flutter/book_sources.dart';
 
 void main() {
   group('BookSourceConfig', () {

@@ -3116,8 +3116,8 @@ class SettingsPage extends StatelessWidget {
           const SizedBox(height: 14),
           FeatureEntry(
             key: const ValueKey('settings-book-sources'),
-            title: '书源管理',
-            subtitle: '添加其他网站，配置搜索、详情、目录与正文规则',
+            title: '主页书源与书源管理',
+            subtitle: '切换主页网站，添加其他书源并配置解析规则',
             icon: CupertinoIcons.globe,
             onTap: () => pushNovelPage<void>(
               context,

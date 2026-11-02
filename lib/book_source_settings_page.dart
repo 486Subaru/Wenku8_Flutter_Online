@@ -19,7 +19,7 @@ class BookSourceSettingsPage extends StatelessWidget {
       context,
       BookSourceEditorPage(source: source, reduceMotion: reduceMotion),
       reduceMotion: reduceMotion,
-      slot: ('settings', source == null ? 'add-book-source' : 'edit-book-source-' + source.id),
+      slot: ('settings', source == null ? 'add-book-source' : 'edit-book-source-${source.id}'),
     );
   }
 
@@ -47,7 +47,7 @@ class BookSourceSettingsPage extends StatelessWidget {
     final confirmed = await confirmNovelAction(
       context,
       title: '删除这个书源？',
-      message: '删除“' + source.name + '”后，它将不再参与搜索。已缓存的书籍正文和阅读记录不会主动删除。',
+      message: '删除“${source.name}”后，它将不再参与搜索。已缓存的书籍正文和阅读记录不会主动删除。',
       confirmLabel: '删除',
       reduceMotion: reduceMotion,
     );
@@ -70,7 +70,7 @@ class BookSourceSettingsPage extends StatelessWidget {
       }
       final source = BookSourceConfig.fromJson(decoded);
       await store.save(source);
-      if (context.mounted) showNovelFeedback(context, '已导入书源：' + source.name);
+      if (context.mounted) showNovelFeedback(context, '已导入书源：${source.name}');
     } catch (error) {
       if (context.mounted) {
         showNovelFeedback(context, error.toString().replaceFirst('FormatException: ', '导入失败：'));
@@ -122,7 +122,7 @@ class BookSourceSettingsPage extends StatelessWidget {
               child: const AppText('从剪贴板导入书源 JSON'),
             ),
             const SizedBox(height: 20),
-            sectionHeader(context, '已配置的网站', store.sources.length.toString() + ' / 20'),
+            sectionHeader(context, '已配置的网站', '${store.sources.length} / 20'),
             const SizedBox(height: 12),
             if (store.sources.isEmpty)
               ContentPanel(
@@ -295,7 +295,7 @@ class _BookSourceEditorPageState extends State<BookSourceEditorPage> {
 
   BookSourceConfig _config() => BookSourceConfig(
     id: widget.source?.id ??
-        'source-' + DateTime.now().microsecondsSinceEpoch.toString(),
+        'source-${DateTime.now().microsecondsSinceEpoch}',
     name: _value('name'),
     baseUrl: _value('baseUrl'),
     loginUrl: _value('loginUrl'),
@@ -346,7 +346,7 @@ class _BookSourceEditorPageState extends State<BookSourceEditorPage> {
       if (store == null) throw const FormatException('书源管理尚未初始化');
       await store.save(config);
       if (mounted) {
-        showNovelFeedback(context, '已保存书源：' + config.name);
+        showNovelFeedback(context, '已保存书源：${config.name}');
         Navigator.pop(context);
       }
     } catch (error) {
@@ -368,12 +368,12 @@ class _BookSourceEditorPageState extends State<BookSourceEditorPage> {
       if (mounted) {
         showNovelFeedback(
           context,
-          '连接成功，解析到 ' + result.items.length.toString() + ' 条搜索结果',
+          '连接成功，解析到 ${result.items.length} 条搜索结果',
         );
       }
     } catch (error) {
       if (mounted) {
-        showNovelFeedback(context, '测试失败：' + error.toString().replaceFirst('FormatException: ', ''));
+        showNovelFeedback(context, '测试失败：${error.toString().replaceFirst('FormatException: ', '')}');
       }
     } finally {
       if (mounted) setState(() => _testing = false);

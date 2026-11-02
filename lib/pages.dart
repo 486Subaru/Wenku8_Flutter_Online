@@ -1845,11 +1845,11 @@ class NovelRow extends StatelessWidget {
                   heroTag: coverHeroTag,
                 ),
               ),
-              if (sourceLabel != null)
+              if (sourceLabel != null || novel.sourceName != null)
                 Positioned(
                   top: 3,
                   right: 3,
-                  child: BookSourceBadge(sourceLabel!),
+                  child: BookSourceBadge(sourceLabel ?? novel.sourceName!),
                 ),
             ],
           ),

@@ -144,6 +144,19 @@ void main() {
     expect(store.homepageSourceId, 'test-source');
   });
 
+  test('successful login preserves a homepage manually changed after source selection', () async {
+    SharedPreferences.setMockInitialValues({});
+    final preferences = await SharedPreferences.getInstance();
+    final store = BookSourceStore(preferences);
+    await store.save(_config(loginUrl: '/login'));
+    await store.installPreset('lightnovel-fun');
+    await store.setLoginSourceId('lightnovel-fun');
+    await store.setHomepageSourceId('test-source');
+
+    await store.completeSourceLogin('lightnovel-fun');
+    expect(store.homepageSourceId, 'test-source');
+  });
+
   test('preserves a selected homepage while revalidating old login state', () async {
     SharedPreferences.setMockInitialValues({
       BookSourceStore.preferenceKey: jsonEncode([

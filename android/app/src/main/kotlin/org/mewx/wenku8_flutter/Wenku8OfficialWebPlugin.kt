@@ -563,7 +563,13 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
         }
         val feedData = feedJson.optJSONObject("data") ?: throw WebFailure("SOURCE_API_ERROR", "轻之国度首页列表缺少 data")
         val list = feedData.optJSONArray("list") ?: feedData.optJSONArray("collections") ?: org.json.JSONArray()
-        val normalized = JSONObject().put("collections", list).put("articles", org.json.JSONArray())
+        val bookRows = org.json.JSONArray()
+        for (index in 0 until list.length()) {
+            val item = list.optJSONObject(index) ?: continue
+            if (item.optInt("sid", 0) == 5 || item.has("is_top")) continue
+            bookRows.put(item)
+        }
+        val normalized = JSONObject().put("collections", bookRows).put("articles", org.json.JSONArray())
         val pagination = feedData.optJSONObject("pagination") ?: feedData.optJSONObject("page_info")
         if (pagination != null) normalized.put("pagination", pagination)
         return JSONObject().put("code", 0).put("data", normalized).toString()

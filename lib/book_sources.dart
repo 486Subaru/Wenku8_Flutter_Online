@@ -542,7 +542,10 @@ class BookSourceStore extends ChangeNotifier {
     }.toList()..sort();
     await preferences.setStringList(loggedInSourcesPreferenceKey, loggedIn);
     await preferences.setString(loginSourcePreferenceKey, id);
-    if (source.supportsReading) {
+    final homepageId = preferences.getString(homepageSourcePreferenceKey);
+    final homepage = homepageId == null ? null : byId(homepageId);
+    if (source.supportsReading &&
+        (homepageId == null || homepageId == id || homepage == null)) {
       await preferences.setString(homepageSourcePreferenceKey, id);
     }
     notifyListeners();

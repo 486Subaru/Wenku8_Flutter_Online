@@ -53,6 +53,7 @@ internal object Wenku8UrlPolicy {
         val uri = parse(raw) ?: return false
         if (!isMainFrame) {
             return uri.scheme.equals("https", ignoreCase = true) &&
+                !uri.host.isNullOrBlank() &&
                 uri.userInfo == null &&
                 (uri.port == -1 || uri.port == 443)
         }

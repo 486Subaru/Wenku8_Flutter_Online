@@ -162,8 +162,11 @@ class CustomSourceLoginActivity : Activity() {
                     error: android.net.http.SslError?,
                 ) {
                     handler?.cancel()
-                    pageError = "HTTPS 证书验证失败，已安全停止加载。请检查系统时间、网络或网站证书。"
-                    status.text = pageError
+                    val failedUrl = error?.url
+                    if (!failedUrl.isNullOrBlank() && failedUrl == view?.url) {
+                        pageError = "HTTPS 证书验证失败，已安全停止加载。请检查系统时间、网络或网站证书。"
+                        status.text = pageError
+                    }
                 }
 
                 override fun onPageFinished(view: WebView?, url: String?) {

@@ -35,9 +35,12 @@ class BookSourceSettingsPage extends StatelessWidget {
         try {
           final page = await BookSourceRepository(source).browse(page: 1);
           if (context.mounted) {
+            final count = page.items.length;
             showNovelFeedback(
               context,
-              '网络与轻之国度首页 API 正常，已读取 ' + page.items.length.toString() + ' 条内容',
+              count > 0
+                  ? '网络与轻之国度首页 API 正常，已读取 $count 条内容'
+                  : '网站可连接，但首页 API 返回 0 条书目；请检查登录 token、分类列表或接口数据格式',
             );
           }
         } catch (error) {

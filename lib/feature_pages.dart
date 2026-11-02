@@ -337,14 +337,21 @@ class _WenkuAccountPageState extends State<WenkuAccountPage> {
         return;
       }
       await store!.completeSourceLogin(source.id);
-      if (mounted) {
-        showNovelFeedback(
-          context,
-          source.supportsReading
-              ? '已完成 ${source.name} 登录，主页书源已切换'
-              : '已完成 ${source.name} 网页登录；该站尚未接入 App 内阅读，主页书源保持不变',
-        );
+      var feedback = '已完成 ${source.name} 网页登录；该站尚未接入 App 内阅读，主页书源保持不变';
+      if (source.supportsReading && store.homepageSourceId == source.id) {
+        try {
+          final page = await widget.repository.browse(page: 1, refresh: true);
+          feedback = page.items.isEmpty
+              ? '已完成 ${source.name} 登录，但主页 API 返回 0 条内容；请使用“测试连接”查看具体原因'
+              : '已完成 ${source.name} 登录，主页已同步并加载 ${page.items.length} 条内容';
+        } catch (error) {
+          feedback = '已保存 ${source.name} 登录状态，但主页加载失败：' +
+              error.toString().replaceFirst('FormatException: ', '');
+        }
+      } else if (source.supportsReading) {
+        feedback = '已完成 ${source.name} 登录；主页仍使用你手动选择的其他书源';
       }
+      if (mounted) showNovelFeedback(context, feedback);
     } catch (error) {
       if (mounted) {
         showNovelFeedback(context, error.toString().replaceFirst('FormatException: ', ''));

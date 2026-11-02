@@ -36,6 +36,7 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
     companion object {
         private const val CHANNEL = "org.mewx.wenku8/official_web"
         private const val LOGIN_REQUEST = 5081
+        private const val SOURCE_LOGIN_REQUEST = 5082
         private const val BASE = "https://www.wenku8.net"
         private const val MAX_TEXT_BYTES = 4 * 1024 * 1024
         private const val MAX_IMAGE_BYTES = 8 * 1024 * 1024
@@ -46,6 +47,8 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
     private var channel: MethodChannel? = null
     private var activityBinding: ActivityPluginBinding? = null
     private var pendingLogin: MethodChannel.Result? = null
+    private var pendingSourceLogin: MethodChannel.Result? = null
+    private var pendingSourceBase: String? = null
     private var lastRequestAt = 0L
     private var lastSourceRequestAt = 0L
     private var userAgent = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
@@ -104,6 +107,13 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
             }
             "hasSession" -> result.success(Wenku8SessionCookies.hasSession())
             "openLogin" -> openLogin(result)
+            "openSourceLogin" -> {
+                val loginUrl = call.argument<String>("loginUrl")
+                    ?: return result.error("SOURCE_LOGIN_URL", "缺少书源登录网址", null)
+                val baseUrl = call.argument<String>("baseUrl")
+                    ?: return result.error("SOURCE_LOGIN_URL", "缺少书源网站地址", null)
+                openSourceLogin(loginUrl, baseUrl, result)
+            }
             "clearSession" -> dispatch(result) { Wenku8SessionCookies.clear(); null }
             else -> result.notImplemented()
         }
@@ -128,6 +138,38 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
         } catch (_: Exception) {
             pendingLogin = null
             result.error("WEB_LOGIN_OPEN_FAILED", "无法打开官网登录页面", null)
+        }
+    }
+
+    private fun openSourceLogin(loginUrl: String, baseUrl: String, result: MethodChannel.Result) {
+        val activity = activityBinding?.activity
+        if (activity == null) {
+            result.error("SOURCE_LOGIN_ACTIVITY", "当前页面无法打开书源登录窗口", null)
+            return
+        }
+        if (pendingSourceLogin != null) {
+            result.error("SOURCE_LOGIN_BUSY", "书源登录窗口已经打开", null)
+            return
+        }
+        val base = runCatching { URL(baseUrl) }.getOrNull()
+        val login = runCatching { URL(loginUrl) }.getOrNull()
+        if (base == null || login == null || !safeHttps(base) || !sameOrigin(login, base)) {
+            result.error("SOURCE_LOGIN_URL", "登录网址必须与书源使用同一个 HTTPS 域名", null)
+            return
+        }
+        pendingSourceLogin = result
+        pendingSourceBase = baseUrl
+        try {
+            activity.startActivityForResult(
+                Intent(activity, CustomSourceLoginActivity::class.java)
+                    .putExtra("baseUrl", baseUrl)
+                    .putExtra("loginUrl", loginUrl),
+                SOURCE_LOGIN_REQUEST,
+            )
+        } catch (_: Exception) {
+            pendingSourceLogin = null
+            pendingSourceBase = null
+            result.error("SOURCE_LOGIN_OPEN_FAILED", "无法打开书源登录页面", null)
         }
     }
 
@@ -436,14 +478,33 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
             main.post { it.error("WEB_NO_ACTIVITY", "登录窗口已关闭", null) }
         }
         pendingLogin = null
+        pendingSourceLogin?.let {
+            main.post { it.error("SOURCE_LOGIN_ACTIVITY", "书源登录窗口已关闭", null) }
+        }
+        pendingSourceLogin = null
+        pendingSourceBase = null
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?): Boolean {
-        if (requestCode != LOGIN_REQUEST) return false
-        val callback = pendingLogin
-        pendingLogin = null
-        callback?.success(resultCode == Activity.RESULT_OK && Wenku8SessionCookies.hasSession())
-        return true
+        if (requestCode == LOGIN_REQUEST) {
+            val callback = pendingLogin
+            pendingLogin = null
+            callback?.success(resultCode == Activity.RESULT_OK && Wenku8SessionCookies.hasSession())
+            return true
+        }
+        if (requestCode == SOURCE_LOGIN_REQUEST) {
+            val callback = pendingSourceLogin
+            val baseUrl = pendingSourceBase
+            pendingSourceLogin = null
+            pendingSourceBase = null
+            callback?.success(
+                resultCode == Activity.RESULT_OK &&
+                    !baseUrl.isNullOrBlank() &&
+                    !Wenku8SessionCookies.cookieHeader(baseUrl).isNullOrBlank(),
+            )
+            return true
+        }
+        return false
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {

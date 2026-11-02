@@ -46,6 +46,10 @@ jobs:
                   ('www.wenku8.net', 'www.wenku8.cc'),
                   ('://wenku8.net', '://wenku8.cc'),
               ],
+              'test/wenku8_html_parser_test.dart': [
+                  ('www.wenku8.net', 'www.wenku8.cc'),
+                  ('://wenku8.net', '://wenku8.cc'),
+              ],
           }
 
           for name, replacements in files.items():

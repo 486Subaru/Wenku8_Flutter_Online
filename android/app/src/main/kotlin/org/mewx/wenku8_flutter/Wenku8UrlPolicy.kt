@@ -25,6 +25,42 @@ internal object Wenku8UrlPolicy {
             uri.rawPath?.startsWith("/") == true
     }
 
+    /**
+     * The official site occasionally emits legacy HTTP links. Upgrade only the
+     * exact official hosts to HTTPS; never follow an insecure request as-is.
+     */
+    fun httpsUpgradeOfficialPage(raw: String): String? {
+        val uri = parse(raw) ?: return null
+        val host = uri.host?.lowercase() ?: return null
+        if (!uri.scheme.equals("http", ignoreCase = true) ||
+            host !in officialHosts ||
+            uri.userInfo != null ||
+            (uri.port != -1 && uri.port != 80)
+        ) return null
+
+        val path = uri.rawPath?.takeIf { it.isNotEmpty() } ?: "/"
+        val query = uri.rawQuery?.let { "?$it" } ?: ""
+        val fragment = uri.rawFragment?.let { "#$it" } ?: ""
+        return "https://$host$path$query$fragment"
+            .takeIf(::isOfficialPage)
+    }
+
+    /**
+     * Cloudflare's interactive challenge is hosted on this exact origin.
+     * Only its challenge/Turnstile paths are allowed; arbitrary Cloudflare
+     * pages and all other third-party destinations remain blocked.
+     */
+    fun isAllowedChallengeUrl(raw: String): Boolean {
+        val uri = parse(raw) ?: return false
+        val path = uri.rawPath ?: return false
+        return uri.scheme.equals("https", ignoreCase = true) &&
+            uri.host?.equals("challenges.cloudflare.com", ignoreCase = true) == true &&
+            uri.userInfo == null &&
+            (uri.port == -1 || uri.port == 443) &&
+            (path.startsWith("/cdn-cgi/challenge-platform/") ||
+                path.startsWith("/turnstile/"))
+    }
+
     fun isAllowedImage(raw: String): Boolean {
         val uri = parse(raw) ?: return false
         val path = uri.rawPath ?: return false

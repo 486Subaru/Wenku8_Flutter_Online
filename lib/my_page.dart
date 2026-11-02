@@ -147,7 +147,9 @@ class MyPage extends StatelessWidget {
                               AppText(
                                 sourceConnected
                                     ? loginSource != null
-                                          ? '${loginSource.name}账号已连接 · 主页书源已同步'
+                                          ? loginSource.supportsReading
+                                              ? '${loginSource.name}账号已连接 · 主页书源已同步'
+                                              : '${loginSource.name}网页登录已连接 · 阅读使用当前书源'
                                           : profile == null
                                               ? '账号已连接'
                                               : '${profile.score} 积分 · ${profile.rank}${features?.shelfSync == null

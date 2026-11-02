@@ -4,7 +4,7 @@ import java.net.URI
 
 /** Network boundary for the official Wenku8 website and its image hosts. */
 internal object Wenku8UrlPolicy {
-    private val officialHosts = setOf("www.wenku8.net", "wenku8.net")
+    private val officialHosts = setOf("www.wenku8.cc", "wenku8.cc")
     private val imageHosts = setOf(
         "img.wenku8.com",
         "pic.wenku8.com",

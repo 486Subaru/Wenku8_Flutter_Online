@@ -112,7 +112,7 @@ class BookSourceSettingsPage extends StatelessWidget {
                 child: ListView(
                   shrinkWrap: true,
                   children: [
-                    option(official, '轻小说文库（默认）', 'www.wenku8.net'),
+                    option(official, '轻小说文库（默认）', 'www.wenku8.cc'),
                     for (final source in store.sources)
                       option(source.id, source.name, source.baseUrl),
                   ],
@@ -210,7 +210,7 @@ class BookSourceSettingsPage extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         AppText(
-                          store.homepageSource?.baseUrl ?? 'www.wenku8.net',
+                          store.homepageSource?.baseUrl ?? 'www.wenku8.cc',
                           style: TextStyle(
                             fontSize: 12,
                             color: Theme.of(context).colorScheme.onSurfaceVariant,

@@ -14,7 +14,7 @@ class Wenku8BookDetail {
 /// HTML parsing for the official Wenku8 pages. This intentionally consumes
 /// only pages returned by the official-site transport; it does not mirror books.
 abstract final class Wenku8HtmlParser {
-  static const base = 'https://www.wenku8.net/';
+  static const base = 'https://www.wenku8.cc/';
   static const _imageHosts = {
     'img.wenku8.com',
     'pic.wenku8.com',
@@ -416,7 +416,7 @@ abstract final class Wenku8HtmlParser {
     final uri = Uri.tryParse(raw.trim());
     if (uri == null) return null;
     var resolved = uri.hasScheme ? uri : baseUri.resolveUri(uri);
-    const officialHosts = {'www.wenku8.net', 'wenku8.net'};
+    const officialHosts = {'www.wenku8.cc', 'wenku8.cc'};
     if (resolved.scheme == 'http' &&
         (_imageHosts.contains(resolved.host) ||
             officialHosts.contains(resolved.host))) {
@@ -449,11 +449,11 @@ abstract final class Wenku8HtmlParser {
     if (uri == null) return null;
     var resolved = uri.hasScheme ? uri : Uri.parse(base).resolveUri(uri);
     if (resolved.scheme == 'http' &&
-        const {'www.wenku8.net', 'wenku8.net'}.contains(resolved.host)) {
+        const {'www.wenku8.cc', 'wenku8.cc'}.contains(resolved.host)) {
       resolved = resolved.replace(scheme: 'https', port: 443);
     }
     if (resolved.scheme != 'https' ||
-        !const {'www.wenku8.net', 'wenku8.net'}.contains(resolved.host) ||
+        !const {'www.wenku8.cc', 'wenku8.cc'}.contains(resolved.host) ||
         resolved.userInfo.isNotEmpty ||
         resolved.hasPort && resolved.port != 443) {
       return null;

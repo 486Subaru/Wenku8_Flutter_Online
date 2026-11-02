@@ -9,7 +9,7 @@ import java.util.concurrent.atomic.AtomicReference
 
 /** Cookies stay inside Android WebView storage; they are never exposed to Dart. */
 internal object Wenku8SessionCookies {
-    private const val ORIGIN = "https://www.wenku8.net/"
+    private const val ORIGIN = "https://www.wenku8.cc/"
     private val main = Handler(Looper.getMainLooper())
 
     fun hasSession(): Boolean {
@@ -63,8 +63,8 @@ internal object Wenku8SessionCookies {
         val deletions = mutableListOf<String>()
         for (name in names) {
             deletions.add(name + "=; Max-Age=0; Path=/")
-            deletions.add(name + "=; Max-Age=0; Path=/; Domain=www.wenku8.net")
-            deletions.add(name + "=; Max-Age=0; Path=/; Domain=wenku8.net")
+            deletions.add(name + "=; Max-Age=0; Path=/; Domain=www.wenku8.cc")
+            deletions.add(name + "=; Max-Age=0; Path=/; Domain=wenku8.cc")
         }
         if (deletions.isNotEmpty()) setCookies(ORIGIN, deletions)
         flush()

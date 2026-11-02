@@ -127,12 +127,12 @@ void main() {
 
       final body = Wenku8HtmlParser.parseChapterBody(
         html,
-        'https://www.wenku8.net/novel/4/4265/1001.htm',
+        'https://www.wenku8.cc/novel/4/4265/1001.htm',
       );
       expect(body, contains('第一段正文。'));
       expect(body, contains('第二段正文。'));
       expect(body, contains('<!--image-->https://img.wenku8.com/image/4/4265/illust.jpg<!--image-->'));
-      expect(body, contains('<!--image-->https://www.wenku8.net/pictures/4/4265/1001/1.jpg<!--image-->'));
+      expect(body, contains('<!--image-->https://www.wenku8.cc/pictures/4/4265/1001/1.jpg<!--image-->'));
       expect(body, isNot(contains('章节导航')));
     });
   });

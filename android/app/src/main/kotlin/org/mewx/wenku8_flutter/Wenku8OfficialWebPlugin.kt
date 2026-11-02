@@ -39,7 +39,7 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
         private const val CHANNEL = "org.mewx.wenku8/official_web"
         private const val LOGIN_REQUEST = 5081
         private const val SOURCE_LOGIN_REQUEST = 5082
-        private const val BASE = "https://www.wenku8.net"
+        private const val BASE = "https://www.wenku8.cc"
         private const val MAX_TEXT_BYTES = 4 * 1024 * 1024
         private const val MAX_IMAGE_BYTES = 8 * 1024 * 1024
     }

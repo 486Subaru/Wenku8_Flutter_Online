@@ -167,7 +167,7 @@ class Wenku8LoginActivity : Activity() {
             1f,
         ))
         setContentView(root)
-        browser.loadUrl("https://www.wenku8.net/index.php")
+        browser.loadUrl("https://www.wenku8.cc/index.php")
     }
 
     private fun completeLogin() {

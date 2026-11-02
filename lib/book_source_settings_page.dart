@@ -257,6 +257,7 @@ class _BookSourceEditorPageState extends State<BookSourceEditorPage> {
       'name': TextEditingController(text: source?.name ?? ''),
       'baseUrl': TextEditingController(text: source?.baseUrl ?? ''),
       'loginUrl': TextEditingController(text: source?.loginUrl ?? ''),
+      'testKeyword': TextEditingController(text: '测试'),
       'searchUrlTemplate': TextEditingController(text: source?.searchUrlTemplate ?? ''),
       'searchItemSelector': TextEditingController(text: source?.searchItemSelector ?? ''),
       'searchTitleSelector': TextEditingController(text: source?.searchTitleSelector ?? ''),
@@ -366,11 +367,27 @@ class _BookSourceEditorPageState extends State<BookSourceEditorPage> {
     try {
       final config = _config();
       config.validate();
-      final result = await BookSourceRepository(config).search('测试');
+      final keyword = _value('testKeyword').isEmpty
+          ? '测试'
+          : _value('testKeyword');
+      final repository = BookSourceRepository(config);
+      final result = await repository.search(keyword);
+      if (result.items.isEmpty) {
+        if (mounted) {
+          showNovelFeedback(context, '搜索请求成功，但没有解析到书籍；请检查搜索选择器或换一个关键词');
+        }
+        return;
+      }
+      final detail = await repository.detail(result.items.first);
+      final chapters = await repository.chapters(detail);
+      if (chapters.isEmpty) {
+        throw const FormatException('目录解析结果为空');
+      }
+      final body = await repository.chapterContent(chapters.first);
       if (mounted) {
         showNovelFeedback(
           context,
-          '连接成功，解析到 ${result.items.length} 条搜索结果',
+          '测试通过：搜索 ${result.items.length} 条 · 目录 ${chapters.length} 章 · 首章正文 ${body.length} 字',
         );
       }
     } catch (error) {
@@ -440,6 +457,7 @@ class _BookSourceEditorPageState extends State<BookSourceEditorPage> {
         _field('name', '网站名称', '例如：某某轻小说'),
         _field('baseUrl', '网站根地址', 'https://example.com/', keyboard: TextInputType.url),
         _field('loginUrl', '登录页面（可选）', '留空表示不需要登录；必须与网站使用同一域名', keyboard: TextInputType.url),
+        _field('testKeyword', '测试关键词', '输入目标网站中确定存在的小说名称'),
         _field(
           'searchUrlTemplate',
           '搜索地址模板',

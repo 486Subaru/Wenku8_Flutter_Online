@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'app_interactions.dart';
 import 'app_ui.dart';
 import 'catalog.dart';
+import 'book_sources.dart';
+import 'legacy_transport.dart';
 import 'library_state.dart';
 import 'library_workspace.dart';
 import 'novel_feed_controller.dart';
@@ -181,6 +183,8 @@ class WenkuAccountPage extends StatefulWidget {
 }
 
 class _WenkuAccountPageState extends State<WenkuAccountPage> {
+  bool _sourceLoginBusy = false;
+
   @override
   void initState() {
     super.initState();
@@ -199,11 +203,133 @@ class _WenkuAccountPageState extends State<WenkuAccountPage> {
     }
   }
 
-  Future<void> _login() async {
-    await _run(
-      () => widget.account.login('', ''),
-      '已完成文库官网登录',
+  Future<void> _chooseLoginSource() async {
+    final store = BookSourceStore.instance;
+    if (store == null) return;
+    const official = '__official_wenku8__';
+    final selected = await showJellySheet<String>(
+      context: context,
+      reduceMotion: widget.state.reduceMotion,
+      builder: (sheet) {
+        Widget option(String id, String title, String subtitle) {
+          final active = id == official
+              ? store.loginSourceId == null
+              : store.loginSourceId == id;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: ContentPanel(
+              onTap: () => Navigator.pop(sheet, id),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        AppText(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 4),
+                        AppText(
+                          subtitle,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(sheet).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (active) const ArchiveIcon(Icons.check_circle, size: 18),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const AppText(
+                '选择登录网站',
+                style: TextStyle(fontSize: 21, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              const AppText('默认使用轻小说文库，也可以选择已配置独立登录网址的书源。'),
+              const SizedBox(height: 18),
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(sheet).size.height * .55,
+                ),
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    option(official, '轻小说文库（默认）', 'www.wenku8.net'),
+                    for (final source in store.loginSources)
+                      option(source.id, source.name, source.baseUrl),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              GlassTextButton(
+                onPressed: () => Navigator.pop(sheet),
+                child: const AppText('取消'),
+              ),
+            ],
+          ),
+        );
+      },
     );
+    if (selected == null) return;
+    try {
+      await store.setLoginSourceId(selected == official ? null : selected);
+      if (mounted) {
+        final name = selected == official
+            ? '轻小说文库（默认）'
+            : store.byId(selected)?.name ?? '所选网站';
+        showNovelFeedback(context, '登录网站已切换为 $name，主页书源已同步');
+      }
+    } catch (error) {
+      if (mounted) {
+        showNovelFeedback(context, error.toString().replaceFirst('FormatException: ', ''));
+      }
+    }
+  }
+
+  Future<void> _login() async {
+    final store = BookSourceStore.instance;
+    final source = store?.loginSource;
+    if (source == null) {
+      await _run(() async {
+        await widget.account.login('', '');
+        await store?.completeOfficialLogin();
+      }, '已完成文库官网登录');
+      return;
+    }
+    if (_sourceLoginBusy || widget.account.busy) return;
+    setState(() => _sourceLoginBusy = true);
+    try {
+      final accepted = await LegacyTransport.openSourceLogin(
+        source.baseUri.resolve(source.loginUrl).toString(),
+        baseUrl: source.baseUrl,
+      );
+      if (!accepted) {
+        if (mounted) {
+          showNovelFeedback(context, '尚未确认登录，请在网站页面完成登录后点击“完成登录”');
+        }
+        return;
+      }
+      await store!.completeSourceLogin(source.id);
+      if (mounted) {
+        showNovelFeedback(context, '已完成 \${source.name} 登录，主页书源已切换');
+      }
+    } catch (error) {
+      if (mounted) {
+        showNovelFeedback(context, error.toString().replaceFirst('FormatException: ', ''));
+      }
+    } finally {
+      if (mounted) setState(() => _sourceLoginBusy = false);
+    }
   }
 
   Future<void> _logout() async {
@@ -214,90 +340,150 @@ class _WenkuAccountPageState extends State<WenkuAccountPage> {
       confirmLabel: '退出账号',
       reduceMotion: widget.state.reduceMotion,
     );
-    if (confirmed) await _run(widget.account.logout, '已退出账号');
+    if (confirmed) {
+      await _run(() async {
+        await widget.account.logout();
+        await BookSourceStore.instance?.completeOfficialLogin();
+      }, '已退出账号');
+    }
   }
 
   @override
-  Widget build(BuildContext context) => AnimatedBuilder(
-    animation: widget.account,
-    builder: (context, _) {
-      final account = widget.account;
-      return ArchiveFeaturePage(
-        title: '文库账号',
-        code: 'ACCOUNT / PERSONAL ARCHIVE',
-        child: LoadedContentSequence(
-          generation: account.authenticated,
-          child: ListView(
-            key: ValueKey(account.authenticated),
-            padding: featurePadding(context),
-            children: [
-              LoadedContentItem(
-                index: 0,
-                child: AppText(
-                  account.authenticated ? '已连接文库账号' : '连接你的文库',
-                  style: const TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              AppText(
-                account.authenticated
-                    ? '官网登录状态已保存在本机。本阶段先恢复在线书目与阅读；云书架、签到和评论功能将在后续阶段接入。'
-                    : '点击下方按钮打开文库官网首页，再选择登录或注册。账号密码和网站验证都由官网处理，应用不会把密码发送给第三方中继。',
-              ),
-              const SizedBox(height: 24),
-              if (!account.authenticated)
+  Widget build(BuildContext context) {
+    final store = BookSourceStore.instance;
+    return AnimatedBuilder(
+      animation: Listenable.merge([widget.account, ?store]),
+      builder: (context, _) {
+        final account = widget.account;
+        final loginSource = store?.loginSource;
+        final sourceName = loginSource?.name ?? '轻小说文库';
+        final connected = loginSource == null
+            ? account.authenticated
+            : store!.isSourceLoggedIn(loginSource.id);
+        final busy = account.busy || _sourceLoginBusy;
+        return ArchiveFeaturePage(
+          title: '账号登录',
+          code: 'ACCOUNT / SOURCE LOGIN',
+          child: LoadedContentSequence(
+            generation: (loginSource?.id, connected),
+            child: ListView(
+              key: ValueKey((loginSource?.id, connected)),
+              padding: featurePadding(context),
+              children: [
                 ContentPanel(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                  onTap: busy || store == null ? null : _chooseLoginSource,
+                  child: Row(
                     children: [
-                      GlassTextButton(
-                        key: const ValueKey('account-login'),
-                        onPressed: account.busy ? null : _login,
-                        child: const AppText('打开文库官网'),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const AppText(
+                              '登录网站',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                            const SizedBox(height: 6),
+                            AppText(
+                              loginSource?.name ?? '轻小说文库（默认）',
+                              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+                            ),
+                            const SizedBox(height: 4),
+                            AppText(
+                              loginSource?.baseUrl ?? 'www.wenku8.net',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ],
-                  ),
-                )
-              else ...[
-                ContentPanel(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
-                      ArchiveCode('SESSION / READY'),
-                      SizedBox(height: 10),
-                      AppText('在线书目、搜索和章节阅读将使用当前官网会话。'),
+                      const ArchiveIcon(CupertinoIcons.chevron_right, size: 16),
                     ],
                   ),
                 ),
-                const SizedBox(height: 16),
-                GlassTextButton(
-                  key: const ValueKey('account-reverify'),
-                  onPressed: account.busy ? null : _login,
-                  child: const AppText('重新打开文库官网'),
+                const SizedBox(height: 18),
+                AppText(
+                  connected ? '已连接 $sourceName 账号' : '连接 $sourceName 账号',
+                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 12),
-                GlassTextButton(
-                  key: const ValueKey('account-logout'),
-                  onPressed: account.busy ? null : _logout,
-                  child: const AppText('退出账号'),
+                AppText(
+                  loginSource == null
+                      ? connected
+                          ? '文库官网登录状态已保存在本机。在线书目与阅读使用文库主站。'
+                          : '打开文库官网后，在网站页面完成登录或注册。账号密码和网站验证都由官网处理。'
+                      : connected
+                          ? '\${loginSource.name} 的独立登录状态已保存。主页书源已同步到该网站。'
+                          : '登录将在该网站的独立页面中完成。该网站 Cookie 与文库主站分开保存；选择此网站后，主页书源也会同步切换。',
                 ),
+                const SizedBox(height: 24),
+                if (!connected)
+                  ContentPanel(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        GlassTextButton(
+                          key: const ValueKey('account-login'),
+                          onPressed: busy ? null : _login,
+                          child: AppText('打开 $sourceName 登录'),
+                        ),
+                      ],
+                    ),
+                  )
+                else ...[
+                  ContentPanel(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const ArchiveCode('SESSION / READY'),
+                        const SizedBox(height: 10),
+                        AppText(
+                          loginSource == null
+                              ? '在线书目、搜索和章节阅读将使用文库主站会话。'
+                              : '该网站的登录 Cookie 独立保存，不会覆盖文库主站账号。',
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  GlassTextButton(
+                    key: const ValueKey('account-reverify'),
+                    onPressed: busy ? null : _login,
+                    child: AppText('重新打开 $sourceName'),
+                  ),
+                  if (loginSource == null) ...[
+                    const SizedBox(height: 12),
+                    GlassTextButton(
+                      key: const ValueKey('account-logout'),
+                      onPressed: busy ? null : _logout,
+                      child: const AppText('退出账号'),
+                    ),
+                  ] else ...[
+                    const SizedBox(height: 10),
+                    AppText(
+                      '如需更换此网站的账号，请在网站页面自行退出后重新登录。',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ],
+                if (busy) ...[
+                  const SizedBox(height: 20),
+                  const InlineSkeleton(label: '正在处理账号操作'),
+                  const SizedBox(height: 10),
+                  AppText(account.operation ?? '正在打开登录网站'),
+                ],
+                FeatureError(account.error),
               ],
-              if (account.busy) ...[
-                const SizedBox(height: 20),
-                const InlineSkeleton(label: '正在处理账号操作'),
-                const SizedBox(height: 10),
-                AppText(account.operation ?? ''),
-              ],
-              FeatureError(account.error),
-            ],
+            ),
           ),
-        ),
-      );
-    },
-  );
+        );
+      },
+    );
+  }
 }
 
 class CloudBookshelfPage extends StatefulWidget {

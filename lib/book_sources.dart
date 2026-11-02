@@ -267,6 +267,13 @@ class BookSourceStore extends ChangeNotifier {
   List<BookSourceConfig> get enabledSources =>
       List.unmodifiable(_sources.where((source) => source.enabled));
 
+  void _refreshImageOrigins() {
+    LegacyTransport.configureSourceImageOrigins([
+      for (final source in _sources)
+        (baseUrl: source.baseUrl, imageHosts: source.imageHosts),
+    ]);
+  }
+
   BookSourceConfig? byId(String id) {
     for (final source in _sources) {
       if (source.id == id) return source;
@@ -278,6 +285,7 @@ class BookSourceStore extends ChangeNotifier {
     _sources.clear();
     final raw = preferences.getString(preferenceKey);
     if (raw == null || raw.isEmpty) {
+      _refreshImageOrigins();
       notifyListeners();
       return;
     }
@@ -297,6 +305,7 @@ class BookSourceStore extends ChangeNotifier {
       _sources.clear();
       throw const FormatException('书源配置损坏，请重新导入配置');
     }
+    _refreshImageOrigins();
     notifyListeners();
   }
 
@@ -319,6 +328,7 @@ class BookSourceStore extends ChangeNotifier {
     _sources
       ..clear()
       ..addAll(next);
+    _refreshImageOrigins();
     notifyListeners();
   }
 
@@ -331,6 +341,7 @@ class BookSourceStore extends ChangeNotifier {
     _sources
       ..clear()
       ..addAll(next);
+    _refreshImageOrigins();
     notifyListeners();
   }
 

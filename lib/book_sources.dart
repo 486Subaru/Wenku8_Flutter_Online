@@ -420,7 +420,7 @@ class BookSourceRepository {
           genre: genre,
           summary: summary,
           colors: _colors(id),
-          coverUrl: coverUrl,
+          coverUrl: coverUrl?.toString(),
           sourceId: source.id,
           sourceName: source.name,
           sourceUrl: bookUrl.toString(),
@@ -462,7 +462,7 @@ class BookSourceRepository {
       summary: summary.isEmpty ? seed.summary : summary,
       colors: seed.colors,
       isComplete: status.contains('完结') || status.contains('完本'),
-      coverUrl: _resolveImage(cover) ?? seed.coverUrl,
+      coverUrl: _resolveImage(cover)?.toString() ?? seed.coverUrl,
       chapterCount: seed.chapterCount,
       sourceId: source.id,
       sourceName: source.name,
@@ -668,11 +668,14 @@ Element? _linkNode(Element row, Element title, String selector) {
   if (title.localName == 'a' && title.attributes.containsKey('href')) {
     return title;
   }
-  try {
-    return title.closest('a[href]') ?? row.querySelector('a[href]');
-  } catch (_) {
-    return row.querySelector('a[href]');
+  Node? ancestor = title.parent;
+  while (ancestor is Element) {
+    if (ancestor.localName == 'a' && ancestor.attributes.containsKey('href')) {
+      return ancestor;
+    }
+    ancestor = ancestor.parent;
   }
+  return row.querySelector('a[href]');
 }
 
 String _clean(String raw) => raw

@@ -109,7 +109,10 @@ class LegacyWenkuRepository extends NovelRepository
       throw ArgumentError.value(page, 'page');
     }
     final key = (sort, page);
-    if (refresh) _pages.remove(key);
+    if (refresh) {
+      _pages.remove(key);
+      _pendingPages.remove(key);
+    }
     final cached = _pages[key];
     if (cached != null) return Future.value(cached);
     final pending = _pendingPages[key];
@@ -222,10 +225,19 @@ class LegacyWenkuRepository extends NovelRepository
     bool refresh = false,
   }) async {
     if (refresh) _libraries = null;
-    return _libraries ??= () async {
-      final source = await _request(_base + 'index.php');
-      return Wenku8HtmlParser.parsePublicationLibraries(source);
+    final cached = _libraries;
+    if (cached != null) return cached;
+    final future = () async {
+      try {
+        final source = await _request(_base + 'index.php');
+        return Wenku8HtmlParser.parsePublicationLibraries(source);
+      } catch (_) {
+        _libraries = null;
+        rethrow;
+      }
     }();
+    _libraries = future;
+    return future;
   }
 
   @override
@@ -238,7 +250,10 @@ class LegacyWenkuRepository extends NovelRepository
       throw ArgumentError('Invalid publication page');
     }
     final key = (libraryId, page);
-    if (refresh) _publicationPages.remove(key);
+    if (refresh) {
+      _publicationPages.remove(key);
+      _pendingPublicationPages.remove(key);
+    }
     final cached = _publicationPages[key];
     if (cached != null) return Future.value(cached);
     final pending = _pendingPublicationPages[key];
@@ -301,7 +316,8 @@ class LegacyWenkuRepository extends NovelRepository
 
   Future<Wenku8BookDetail> _loadDetail(int id, {Novel? seed}) async {
     final cached = _details[id];
-    if (cached != null && seed == null) {
+    if (cached != null && seed == null &&
+        (_novelPrefixes[id]?.isNotEmpty ?? false)) {
       return Wenku8BookDetail(cached, _novelPrefixes[id] ?? '');
     }
     final source = await _request(_detailUrl(id), referer: _base + 'index.php');

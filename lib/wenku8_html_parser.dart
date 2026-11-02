@@ -139,7 +139,6 @@ abstract final class Wenku8HtmlParser {
     final root = document.querySelector('#content') ??
         document.body ??
         document.documentElement;
-    if (root == null) return null;
     final pageTitle = _oneLine(document.querySelector('title')?.text ?? '');
     final heading = _oneLine(
       root.querySelector('h1')?.text ??
@@ -153,9 +152,6 @@ abstract final class Wenku8HtmlParser {
     final category = _labeledValue(root, '文库分类');
     final status = _labeledValue(root, '文章状态');
     final updated = _labeledValue(root, '最后更新');
-    final latest = _labeledValue(root, '最近章节').ifEmpty(
-      () => _labeledValue(root, '最新章节'),
-    );
     final intro = _labeledValue(root, '内容简介').ifEmpty(
       () => _labeledValue(root, '简介'),
     );
@@ -205,8 +201,7 @@ abstract final class Wenku8HtmlParser {
         orElse: () => document.createElement('table'),
       ),
     );
-    if (table != null) {
-      for (final row in table.querySelectorAll('tr')) {
+    for (final row in table.querySelectorAll('tr')) {
         final volume = row.querySelector('td.vcss');
         if (volume != null) {
           volumeId++;
@@ -229,7 +224,6 @@ abstract final class Wenku8HtmlParser {
           }
         }
       }
-    }
     if (chapters.isEmpty) {
       for (final anchor in document.querySelectorAll('a[href]')) {
         final id = _chapterId(anchor.attributes['href']);
@@ -269,7 +263,15 @@ abstract final class Wenku8HtmlParser {
     if (node is Text) return node.text;
     if (node is! Element) return '';
     final tag = node.localName;
-    if (const {'script', 'style', 'noscript', 'iframe', 'form'}.contains(tag)) {
+    if (const {
+      'script',
+      'style',
+      'noscript',
+      'iframe',
+      'form',
+      'ul',
+      'ol',
+    }.contains(tag)) {
       return '';
     }
     if (tag == 'img') {

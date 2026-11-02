@@ -1,6 +1,8 @@
 package org.mewx.wenku8_flutter
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -13,6 +15,37 @@ class Wenku8UrlPolicyTest {
         assertFalse(Wenku8UrlPolicy.isOfficialPage("https://wenku8.net.evil.example/index.php"))
         assertFalse(Wenku8UrlPolicy.isOfficialPage("https://user@www.wenku8.net/index.php"))
         assertFalse(Wenku8UrlPolicy.isOfficialPage("https://www.wenku8.net:444/index.php"))
+    }
+
+    @Test
+    fun upgradesOnlyLegacyHttpLinksOnTheOfficialHost() {
+        assertEquals(
+            "https://www.wenku8.net/login.php?jumpurl=http%3A%2F%2Fwww.wenku8.net%2Findex.php",
+            Wenku8UrlPolicy.httpsUpgradeOfficialPage(
+                "http://www.wenku8.net/login.php?jumpurl=http%3A%2F%2Fwww.wenku8.net%2Findex.php",
+            ),
+        )
+        assertNull(Wenku8UrlPolicy.httpsUpgradeOfficialPage("http://evil.example/login.php"))
+        assertNull(Wenku8UrlPolicy.httpsUpgradeOfficialPage("http://www.wenku8.net:8080/login.php"))
+        assertNull(Wenku8UrlPolicy.httpsUpgradeOfficialPage("http://user@www.wenku8.net/login.php"))
+    }
+
+    @Test
+    fun allowsOnlyCloudflareChallengePaths() {
+        assertTrue(
+            Wenku8UrlPolicy.isAllowedChallengeUrl(
+                "https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/g/turnstile/if/ov2/av0/rcv",
+            ),
+        )
+        assertTrue(
+            Wenku8UrlPolicy.isAllowedChallengeUrl(
+                "https://challenges.cloudflare.com/turnstile/v0/api.js",
+            ),
+        )
+        assertFalse(Wenku8UrlPolicy.isAllowedChallengeUrl("https://challenges.cloudflare.com/"))
+        assertFalse(Wenku8UrlPolicy.isAllowedChallengeUrl("https://www.cloudflare.com/turnstile/v0/api.js"))
+        assertFalse(Wenku8UrlPolicy.isAllowedChallengeUrl("http://challenges.cloudflare.com/turnstile/v0/api.js"))
+        assertFalse(Wenku8UrlPolicy.isAllowedChallengeUrl("https://evil.example/cdn-cgi/challenge-platform/test"))
     }
 
     @Test

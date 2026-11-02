@@ -484,7 +484,10 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
     ): Boolean {
         if (!safeHttps(url)) return false
         return if (image) {
-            url.host.lowercase() in allowedHosts
+            val host = url.host.lowercase()
+            allowedHosts.any { allowed ->
+                host == allowed || host.endsWith(".$allowed")
+            }
         } else {
             sameOrigin(url, origin)
         }

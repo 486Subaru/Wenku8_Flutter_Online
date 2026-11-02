@@ -39,6 +39,7 @@ import 'book_categories.dart';
 import 'bookshelf_scope.dart';
 import 'book_source_badge.dart';
 import 'book_source_settings_page.dart';
+import 'book_sources.dart';
 import 'book_search.dart';
 import 'blocked_tags_controls.dart';
 import 'catalog.dart';
@@ -153,6 +154,7 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
   }
 
   late final _navigation = HomeNavigation(widget.state, widget.network);
+  late final BookSourceStore? _bookSourceStore = BookSourceStore.instance;
   late List<int> _visibleTabs;
   final _visitedTabs = <int>{};
   bool _catalogStarted = false;
@@ -248,6 +250,7 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
     _tab = _navigation.destination(widget.state.startPage.index);
     _visitedTabs.add(_tab);
     _navigation.addListener(_navigationChanged);
+    _bookSourceStore?.addListener(_bookSourcesChanged);
     _searchText.addListener(_searchEdited);
     _searchFeed.addListener(_searchSucceeded);
     widget.state.blockedTagsChanges.addListener(_blockedTagsChanged);
@@ -331,6 +334,20 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
     _ensureCatalog();
   }
 
+  void _bookSourcesChanged() {
+    if (!mounted) return;
+    // The repository reads the selected homepage source on every request.
+    // Refresh retained discovery/search results after a source or login change.
+    if (_catalogStarted) {
+      unawaited(_catalog.refresh());
+    } else {
+      _ensureCatalog();
+    }
+    if (_searchFeed.query.isNotEmpty) {
+      unawaited(_searchFeed.refresh());
+    }
+  }
+
   void _ensureCatalog() {
     if (_tab != 0 || !_visibleTabs.contains(0)) return;
     if (!_catalogStarted) {
@@ -386,6 +403,7 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
   @override
   void dispose() {
     widget.state.blockedTagsChanges.removeListener(_blockedTagsChanged);
+    _bookSourceStore?.removeListener(_bookSourcesChanged);
     _navigation.removeListener(_navigationChanged);
     _navigation.dispose();
     _pageTransition.dispose();
@@ -1019,8 +1037,8 @@ class DiscoverPage extends StatelessWidget {
     children: [
       Expanded(
         child: const ArchiveMasthead(
-          title: '轻小说文库',
-          code: 'WENKU8 / READING ARCHIVE',
+          title: '么咕咪',
+          code: 'EXPLOSION!',
           brand: true,
         ),
       ),

@@ -41,7 +41,7 @@ class Wenku8LoginActivity : Activity() {
             }
         }
         val title = TextView(this).apply {
-            text = "轻小说文库 · 官方登录"
+            text = "日轻 · 文库账号登录"
             textSize = 16f
             gravity = Gravity.CENTER_VERTICAL
             setPadding(8, 0, 8, 0)
@@ -65,7 +65,7 @@ class Wenku8LoginActivity : Activity() {
         ))
 
         status = TextView(this).apply {
-            text = "请在下方官方页面登录；如出现网站验证，请按页面提示完成。"
+            text = "请在文库官网首页选择登录或注册；如出现网站验证，请按页面提示完成。"
             textSize = 13f
             setPadding(8, 6, 8, 10)
         }
@@ -102,7 +102,7 @@ class Wenku8LoginActivity : Activity() {
                     status.text = if (Wenku8SessionCookies.hasSession()) {
                         "已检测到官网登录状态，点击右上角“完成登录”返回应用。"
                     } else {
-                        "请在下方官方页面登录；如出现网站验证，请按页面提示完成。"
+                        "请在官网页面点击登录或注册；如出现网站验证，请按页面提示完成。"
                     }
                 }
             }
@@ -116,7 +116,7 @@ class Wenku8LoginActivity : Activity() {
             1f,
         ))
         setContentView(root)
-        browser.loadUrl("https://www.wenku8.net/login.php")
+        browser.loadUrl("https://www.wenku8.net/index.php")
     }
 
     private fun completeLogin() {

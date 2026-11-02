@@ -143,7 +143,8 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
                     ?: return result.error("SOURCE_LOGIN_URL", "缺少书源登录网址", null)
                 val baseUrl = call.argument<String>("baseUrl")
                     ?: return result.error("SOURCE_LOGIN_URL", "缺少书源网站地址", null)
-                openSourceLogin(loginUrl, baseUrl, result)
+                val allowedHosts = call.argument<List<String>>("allowedHosts")?.take(12) ?: emptyList()
+                openSourceLogin(loginUrl, baseUrl, allowedHosts, result)
             }
             "clearSession" -> dispatch(result) { Wenku8SessionCookies.clear(); null }
             else -> result.notImplemented()
@@ -172,7 +173,7 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
         }
     }
 
-    private fun openSourceLogin(loginUrl: String, baseUrl: String, result: MethodChannel.Result) {
+    private fun openSourceLogin(loginUrl: String, baseUrl: String, allowedHosts: List<String>, result: MethodChannel.Result) {
         val activity = activityBinding?.activity
         if (activity == null) {
             result.error("SOURCE_LOGIN_ACTIVITY", "当前页面无法打开书源登录窗口", null)
@@ -193,7 +194,8 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
             activity.startActivityForResult(
                 Intent(activity, CustomSourceLoginActivity::class.java)
                     .putExtra("baseUrl", baseUrl)
-                    .putExtra("loginUrl", loginUrl),
+                    .putExtra("loginUrl", loginUrl)
+                    .putStringArrayListExtra("allowedHosts", ArrayList(allowedHosts)),
                 SOURCE_LOGIN_REQUEST,
             )
         } catch (_: Exception) {

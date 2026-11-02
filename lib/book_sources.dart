@@ -38,6 +38,7 @@ class BookSourceConfig {
     this.engine = 'css',
     this.enabled = true,
     this.loginUrl = '',
+    this.loginHosts = const [],
     this.searchLinkSelector = '',
     this.searchNextPageSelector = '',
     this.searchAuthorSelector = '',
@@ -65,6 +66,7 @@ class BookSourceConfig {
   final String baseUrl;
   final bool enabled;
   final String loginUrl;
+  final List<String> loginHosts;
   final String searchUrlTemplate;
   final String searchItemSelector;
   final String searchTitleSelector;
@@ -104,6 +106,7 @@ class BookSourceConfig {
     enabled: value,
     engine: engine,
     loginUrl: loginUrl,
+    loginHosts: loginHosts,
     searchUrlTemplate: searchUrlTemplate,
     searchItemSelector: searchItemSelector,
     searchTitleSelector: searchTitleSelector,
@@ -156,6 +159,19 @@ class BookSourceConfig {
           login.userInfo.isNotEmpty ||
           login.hasFragment) {
         throw const FormatException('登录网址必须与书源使用同一个 HTTPS 域名');
+      }
+    }
+    if (loginHosts.length > 12) {
+      throw const FormatException('登录跳转域名最多允许配置 12 个');
+    }
+    final validLoginHost = RegExp(
+      r'^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$',
+    );
+    for (final host in loginHosts) {
+      if (host != host.trim().toLowerCase() ||
+          !validLoginHost.hasMatch(host) ||
+          host.contains('..')) {
+        throw FormatException('登录跳转域名无效：$host；只填写主机名，不要填写协议、端口或通配符');
       }
     }
     if (!const {'css', 'lightnovel_fun', 'web_login_only'}.contains(engine)) {
@@ -237,6 +253,7 @@ class BookSourceConfig {
     'baseUrl': baseUrl.trim(),
     'enabled': enabled,
     'loginUrl': loginUrl,
+    'loginHosts': loginHosts,
     'searchUrlTemplate': searchUrlTemplate,
     'searchItemSelector': searchItemSelector,
     'searchTitleSelector': searchTitleSelector,
@@ -273,6 +290,13 @@ class BookSourceConfig {
       baseUrl: string('baseUrl'),
       enabled: value['enabled'] != false,
       loginUrl: string('loginUrl'),
+      loginHosts: value['loginHosts'] is List
+          ? (value['loginHosts'] as List)
+                .whereType<String>()
+                .map((host) => host.trim().toLowerCase())
+                .where((host) => host.isNotEmpty)
+                .toList(growable: false)
+          : const [],
       searchUrlTemplate: string('searchUrlTemplate'),
       searchItemSelector: string('searchItemSelector'),
       searchTitleSelector: string('searchTitleSelector'),
@@ -336,6 +360,7 @@ class BookSourceStore extends ChangeNotifier {
       baseUrl: 'https://www.lightnovel.fun/',
       engine: 'lightnovel_fun',
       loginUrl: '/',
+      loginHosts: ['lightnovel.fun'],
       searchUrlTemplate: '',
       searchItemSelector: '',
       searchTitleSelector: '',
@@ -536,9 +561,20 @@ class BookSourceStore extends ChangeNotifier {
       if (decoded is! List || decoded.length > 20) {
         throw const FormatException();
       }
+      var migratedLoginHosts = false;
       for (final item in decoded) {
         if (item is! Map<String, dynamic>) continue;
-        final source = BookSourceConfig.fromJson(item);
+        final config = Map<String, dynamic>.from(item);
+        if (config['id'] == 'lightnovel-fun') {
+          final savedHosts = config['loginHosts'] is List
+              ? (config['loginHosts'] as List).whereType<String>().toList()
+              : <String>[];
+          if (!savedHosts.map((host) => host.toLowerCase()).contains('lightnovel.fun')) {
+            config['loginHosts'] = [...savedHosts, 'lightnovel.fun'];
+            migratedLoginHosts = true;
+          }
+        }
+        final source = BookSourceConfig.fromJson(config);
         source.validate();
         if (_sources.any((entry) => entry.id == source.id)) continue;
         _sources.add(source);
@@ -546,6 +582,12 @@ class BookSourceStore extends ChangeNotifier {
     } catch (_) {
       _sources.clear();
       throw const FormatException('书源配置损坏，请重新导入配置');
+    }
+    if (migratedLoginHosts) {
+      await preferences.setString(
+        preferenceKey,
+        jsonEncode(_sources.map((source) => source.toJson()).toList()),
+      );
     }
     _refreshImageOrigins();
     notifyListeners();

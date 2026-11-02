@@ -23,11 +23,13 @@ class CustomSourceLoginActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var base: Uri
     private lateinit var loginUrl: String
+    private var allowedHosts: List<String> = emptyList()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val baseRaw = intent.getStringExtra("baseUrl").orEmpty()
         loginUrl = intent.getStringExtra("loginUrl").orEmpty()
+        allowedHosts = intent.getStringArrayListExtra("allowedHosts")?.toList().orEmpty()
         base = runCatching { Uri.parse(baseRaw) }.getOrNull()
             ?: return finishWithError("书源网站地址无效")
         if (!safePage(loginUrl)) return finishWithError("登录网址必须属于配置的 HTTPS 网站")
@@ -122,25 +124,28 @@ class CustomSourceLoginActivity : Activity() {
 
     private fun safePage(raw: String): Boolean {
         val uri = runCatching { Uri.parse(raw) }.getOrNull() ?: return false
-        val basePort = if (base.port == -1) 443 else base.port
+        val host = uri.host?.lowercase() ?: return false
+        val baseHost = base.host?.lowercase() ?: return false
+        val allowed = (allowedHosts + baseHost).map { it.trim().lowercase() }.toSet()
         val targetPort = if (uri.port == -1) 443 else uri.port
         return uri.scheme == "https" &&
-            uri.host?.equals(base.host, ignoreCase = true) == true &&
-            targetPort == basePort &&
+            host in allowed &&
+            targetPort == 443 &&
             uri.userInfo == null
     }
 
     private fun hasSourceCookie(currentUrl: String?): Boolean {
-        if (base.host.equals("www.lightnovel.fun", ignoreCase = true)) {
-            // Light Novel Kingdom's reader API may use a path-scoped token cookie.
-            // Check the API path, not only the homepage/login URL.
-            val apiUrl = "${base.scheme}://${base.host}/proxy/api/search/search-result"
-            val token = CookieManager.getInstance().getCookie(apiUrl).orEmpty()
-                .split(';')
-                .map { it.trim() }
-                .firstOrNull { it.startsWith("token=") }
-                ?.substringAfter('=')
-            return !token.isNullOrBlank()
+        if (base.host.equals("www.lightnovel.fun", ignoreCase = true) ||
+            base.host.equals("lightnovel.fun", ignoreCase = true)) {
+            // The token may be scoped to /proxy and set on either exact site host.
+            val hosts = linkedSetOf(base.host, "www.lightnovel.fun", "lightnovel.fun")
+            return hosts.any { host ->
+                val apiUrl = "https://$host/proxy/api/search/search-result"
+                CookieManager.getInstance().getCookie(apiUrl).orEmpty()
+                    .split(';')
+                    .map { it.trim() }
+                    .any { it.startsWith("token=") && it.substringAfter('=').isNotBlank() }
+            }
         }
         val candidates = listOfNotNull(currentUrl, loginUrl, base.toString()).distinct()
         return candidates.any { !Wenku8SessionCookies.cookieHeader(it).isNullOrBlank() }

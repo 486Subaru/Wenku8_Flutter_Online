@@ -102,7 +102,7 @@ class CustomSourceLoginActivity : Activity() {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
                     status.text = if (hasSourceCookie(url)) {
-                        "已检测到此网站的 Cookie。确认登录成功后，点击右上角“完成登录”。"
+                        "已检测到此网站的登录凭据。确认登录成功后，点击右上角“完成登录”。"
                     } else {
                         "请在下方网站页面登录；账号与主站分开保存。"
                     }
@@ -131,6 +131,17 @@ class CustomSourceLoginActivity : Activity() {
     }
 
     private fun hasSourceCookie(currentUrl: String?): Boolean {
+        if (base.host.equals("www.lightnovel.fun", ignoreCase = true)) {
+            // Light Novel Kingdom's reader API may use a path-scoped token cookie.
+            // Check the API path, not only the homepage/login URL.
+            val apiUrl = "${base.scheme}://${base.host}/proxy/api/search/search-result"
+            val token = CookieManager.getInstance().getCookie(apiUrl).orEmpty()
+                .split(';')
+                .map { it.trim() }
+                .firstOrNull { it.startsWith("token=") }
+                ?.substringAfter('=')
+            return !token.isNullOrBlank()
+        }
         val candidates = listOfNotNull(currentUrl, loginUrl, base.toString()).distinct()
         return candidates.any { !Wenku8SessionCookies.cookieHeader(it).isNullOrBlank() }
     }
@@ -144,7 +155,7 @@ class CustomSourceLoginActivity : Activity() {
     private fun completeLogin() {
         CookieManager.getInstance().flush()
         if (!hasSourceCookie(browser.url)) {
-            Toast.makeText(this, "尚未检测到此网站的登录 Cookie", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "尚未检测到此网站的登录凭据；请先完成登录", Toast.LENGTH_SHORT).show()
             return
         }
         setResult(RESULT_OK)

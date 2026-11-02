@@ -411,7 +411,10 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
             throw WebFailure("SOURCE_BAD_URL", "轻之国度书源必须使用 https://www.lightnovel.fun/")
         }
 
-        val cookies = Wenku8SessionCookies.cookieHeader(rawBaseUrl).orEmpty()
+        // The site's token cookie may be scoped to /proxy rather than /.
+        // Read cookies for the actual API path so path-scoped auth is included.
+        val searchEndpoint = URL(origin, "/proxy/api/search/search-result").toString()
+        val cookies = Wenku8SessionCookies.cookieHeader(searchEndpoint).orEmpty()
         val rawToken = cookies.split(';')
             .map { it.trim() }
             .firstOrNull { it.startsWith("token=") }

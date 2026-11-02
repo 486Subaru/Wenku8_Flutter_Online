@@ -332,7 +332,7 @@ class BookSourceSettingsPage extends StatelessWidget {
             ],
             const SizedBox(height: 12),
             AppText(
-              '说明：通用书源使用 HTTPS 静态 HTML 与 CSS 选择器；轻之国度另有专用 JSON API 适配。其他依赖复杂 JavaScript、验证码或特殊接口的网站仍需单独适配。书源登录 Cookie 按网站域名隔离。',
+              '说明：主页书源与账号登录网站独立设置。轻之国度使用专用 API，需登录轻之国度账号；lightnovel.fun 在部分网络环境下可能需要 VPN/代理才能访问。无法连接时可将主页书源切回“轻小说文库（默认）”。其他网站仍需单独适配，Cookie 按网站域名隔离。',
               style: TextStyle(
                 fontSize: 12,
                 height: 1.6,

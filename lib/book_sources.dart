@@ -314,6 +314,7 @@ class BookSourceStore extends ChangeNotifier {
   static const homepageSourcePreferenceKey = 'homepage_book_source_v1';
   static const loginSourcePreferenceKey = 'login_book_source_v1';
   static const loggedInSourcesPreferenceKey = 'logged_in_book_sources_v1';
+  static const loginHomepageSeparationMigrationKey = 'login_homepage_separation_v1';
   static BookSourceStore? instance;
 
   final SharedPreferences preferences;
@@ -459,14 +460,8 @@ class BookSourceStore extends ChangeNotifier {
         throw const FormatException('该书源没有配置独立登录网址');
       }
       await preferences.setString(loginSourcePreferenceKey, id);
-      // A native reader source also becomes the homepage source. Browser-only
-      // presets never displace a working reader source.
-      if (source.supportsReading) {
-        await preferences.setString(homepageSourcePreferenceKey, id);
-      }
     } else {
       await preferences.remove(loginSourcePreferenceKey);
-      await preferences.remove(homepageSourcePreferenceKey);
     }
     notifyListeners();
   }
@@ -482,16 +477,12 @@ class BookSourceStore extends ChangeNotifier {
     }.toList()..sort();
     await preferences.setStringList(loggedInSourcesPreferenceKey, loggedIn);
     await preferences.setString(loginSourcePreferenceKey, id);
-    // Only a source with a native reader adapter can become the homepage.
-    if (source.supportsReading) {
-      await preferences.setString(homepageSourcePreferenceKey, id);
-    }
+    // Login identity and homepage catalog are independent settings.
     notifyListeners();
   }
 
   Future<void> completeOfficialLogin() async {
     await preferences.remove(loginSourcePreferenceKey);
-    await preferences.remove(homepageSourcePreferenceKey);
     notifyListeners();
   }
 
@@ -509,7 +500,21 @@ class BookSourceStore extends ChangeNotifier {
     return null;
   }
 
+  Future<void> _migrateLoginHomepageSeparation() async {
+    if (preferences.getBool(loginHomepageSeparationMigrationKey) == true) {
+      return;
+    }
+    // Older builds automatically changed the homepage to Light Novel Kingdom
+    // when its login preset was selected. Restore Wenku8 as the safe default
+    // once; users can still choose Light Novel Kingdom explicitly in settings.
+    if (preferences.getString(homepageSourcePreferenceKey) == 'lightnovel-fun') {
+      await preferences.remove(homepageSourcePreferenceKey);
+    }
+    await preferences.setBool(loginHomepageSeparationMigrationKey, true);
+  }
+
   Future<void> load() async {
+    await _migrateLoginHomepageSeparation();
     _sources.clear();
     final raw = preferences.getString(preferenceKey);
     if (raw == null || raw.isEmpty) {

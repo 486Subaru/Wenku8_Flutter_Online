@@ -256,7 +256,7 @@ class _WenkuAccountPageState extends State<WenkuAccountPage> {
               ),
               const SizedBox(height: 8),
               const AppText(
-                '可直接选择内置网站预设，无需手动填写配置。标注“仅网页登录入口”的网站目前尚未接入 App 内搜索和阅读，不会替换当前主页书源。',
+                '可直接选择内置网站预设，无需手动填写配置。登录网站与主页书源分别设置；登录某个网站不会自动更改主页书源。',
               ),
               const SizedBox(height: 18),
               ConstrainedBox(
@@ -299,10 +299,8 @@ class _WenkuAccountPageState extends State<WenkuAccountPage> {
         showNovelFeedback(
           context,
           selectedSource == null
-              ? '登录网站已切换为 $name'
-              : selectedSource.supportsReading
-                  ? '登录网站已切换为 $name，主页书源已同步'
-                  : '已选择 $name；当前仅提供网页登录入口，主页书源保持不变',
+              ? '登录网站已切换为 $name；主页书源不变'
+              : '登录网站已切换为 $name；主页书源不变',
         );
       }
     } catch (error) {
@@ -436,11 +434,11 @@ class _WenkuAccountPageState extends State<WenkuAccountPage> {
                           : '打开文库官网后，在网站页面完成登录或注册。账号密码和网站验证都由官网处理。'
                       : !loginSource.supportsReading
                           ? connected
-                              ? '${loginSource.name} 的网页登录状态已保存在本机。该站尚未接入 App 内搜索和阅读，主页书源保持不变。'
-                              : '登录将在该网站的独立页面中完成。Cookie 与文库主站分开保存；该站目前仅提供网页登录入口，不会替换主页书源。'
+                              ? '${loginSource.name} 的网页登录状态已保存在本机。主页书源需在“书源管理”中单独选择。'
+                              : '登录将在该网站的独立页面中完成。Cookie 与文库主站分开保存；主页书源需在“书源管理”中单独选择。'
                           : connected
-                              ? '${loginSource.name} 的独立登录状态已保存。主页书源已同步到该网站。'
-                              : '登录将在该网站的独立页面中完成。该网站 Cookie 与文库主站分开保存；选择此网站后，主页书源也会同步切换。',
+                              ? '${loginSource.name} 的独立登录状态已保存。主页书源保持独立设置。'
+                              : '登录将在该网站的独立页面中完成。该网站 Cookie 与文库主站分开保存；主页书源需在“书源管理”中单独选择。',
                 ),
                 const SizedBox(height: 24),
                 if (!connected)
@@ -466,7 +464,7 @@ class _WenkuAccountPageState extends State<WenkuAccountPage> {
                         AppText(
                           loginSource == null
                               ? '在线书目、搜索和章节阅读将使用文库主站会话。'
-                              : '该网站的登录 Cookie 独立保存，不会覆盖文库主站账号。',
+                              : '该网站的登录 Cookie 独立保存，不会覆盖文库主站账号；主页书源由“书源管理”单独设置。',
                         ),
                       ],
                     ),

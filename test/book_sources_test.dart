@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wenku8_flutter/book_search.dart';
@@ -78,25 +79,52 @@ void main() {
     expect(second.enabledSources, hasLength(1));
   });
 
-  test('selecting a login website also selects it as homepage source', () async {
+  test('login website and homepage source are independent', () async {
     SharedPreferences.setMockInitialValues({});
     final preferences = await SharedPreferences.getInstance();
     final store = BookSourceStore(preferences);
     await store.save(_config(loginUrl: '/login'));
+    await store.setHomepageSourceId('test-source');
+    await store.installPreset('lightnovel-fun');
 
-    await store.setLoginSourceId('test-source');
-    expect(store.loginSourceId, 'test-source');
+    await store.setLoginSourceId('lightnovel-fun');
+    expect(store.loginSourceId, 'lightnovel-fun');
     expect(store.homepageSourceId, 'test-source');
-    expect(store.isSourceLoggedIn('test-source'), isFalse);
+    expect(store.isSourceLoggedIn('lightnovel-fun'), isFalse);
 
-    await store.completeSourceLogin('test-source');
-    expect(store.isSourceLoggedIn('test-source'), isTrue);
+    await store.completeSourceLogin('lightnovel-fun');
+    expect(store.isSourceLoggedIn('lightnovel-fun'), isTrue);
     expect(store.homepageSourceId, 'test-source');
 
     await store.setLoginSourceId(null);
     expect(store.loginSourceId, isNull);
+    expect(store.homepageSourceId, 'test-source');
+    expect(store.isSourceLoggedIn('lightnovel-fun'), isTrue);
+
+    await store.completeOfficialLogin();
+    expect(store.homepageSourceId, 'test-source');
+  });
+
+  test('migrates the old automatic Light Novel Kingdom homepage selection', () async {
+    SharedPreferences.setMockInitialValues({
+      BookSourceStore.preferenceKey: jsonEncode([
+        BookSourceStore.builtInPresets.first.toJson(),
+      ]),
+      BookSourceStore.homepageSourcePreferenceKey: 'lightnovel-fun',
+    });
+    final preferences = await SharedPreferences.getInstance();
+    final store = BookSourceStore(preferences);
+
+    await store.load();
     expect(store.homepageSourceId, isNull);
-    expect(store.isSourceLoggedIn('test-source'), isTrue);
+    expect(
+      preferences.getBool(BookSourceStore.loginHomepageSeparationMigrationKey),
+      isTrue,
+    );
+
+    await store.setHomepageSourceId('lightnovel-fun');
+    await store.load();
+    expect(store.homepageSourceId, 'lightnovel-fun');
   });
 
   test('homepage source can be selected independently in settings', () async {

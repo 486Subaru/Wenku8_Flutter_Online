@@ -41,6 +41,7 @@ class BookSourceConfig {
     this.chapterListUrlTemplate = '',
     this.chapterTitleSelector = '',
     this.chapterHrefSelector = 'a[href]',
+    this.chapterNextPageSelector = '',
     this.imageHosts = const [],
   });
 
@@ -69,6 +70,7 @@ class BookSourceConfig {
   final String chapterItemSelector;
   final String chapterTitleSelector;
   final String chapterHrefSelector;
+  final String chapterNextPageSelector;
   final String chapterContentSelector;
   final List<String> imageHosts;
 
@@ -103,6 +105,7 @@ class BookSourceConfig {
     chapterItemSelector: chapterItemSelector,
     chapterTitleSelector: chapterTitleSelector,
     chapterHrefSelector: chapterHrefSelector,
+    chapterNextPageSelector: chapterNextPageSelector,
     chapterContentSelector: chapterContentSelector,
     imageHosts: imageHosts,
   );
@@ -163,6 +166,7 @@ class BookSourceConfig {
       chapterItemSelector,
       chapterTitleSelector,
       chapterHrefSelector,
+      chapterNextPageSelector,
       chapterContentSelector,
     ].where((value) => value.trim().isNotEmpty);
     final document = parse('<html><body><div></div></body></html>');
@@ -218,6 +222,7 @@ class BookSourceConfig {
     'chapterItemSelector': chapterItemSelector,
     'chapterTitleSelector': chapterTitleSelector,
     'chapterHrefSelector': chapterHrefSelector,
+    'chapterNextPageSelector': chapterNextPageSelector,
     'chapterContentSelector': chapterContentSelector,
     'imageHosts': imageHosts,
   };
@@ -251,6 +256,7 @@ class BookSourceConfig {
       chapterItemSelector: string('chapterItemSelector'),
       chapterTitleSelector: string('chapterTitleSelector'),
       chapterHrefSelector: string('chapterHrefSelector', 'a[href]'),
+      chapterNextPageSelector: string('chapterNextPageSelector'),
       chapterContentSelector: string('chapterContentSelector'),
       imageHosts: value['imageHosts'] is List
           ? (value['imageHosts'] as List)
@@ -474,31 +480,49 @@ class BookSourceRepository {
     final rawUrl = source.chapterListUrlTemplate.trim().isEmpty
         ? bookUrl
         : source.chapterListUrlTemplate.replaceAll('{bookUrl}', bookUrl);
-    final html = await _fetch(source.baseUri.resolve(rawUrl).toString());
-    final document = parse(html);
-    final rows = document.querySelectorAll(source.chapterItemSelector);
+    var currentUrl = _resolvePage(source.baseUri.resolve(rawUrl).toString());
+    if (currentUrl == null) {
+      throw const FormatException('目录地址超出了配置的网站域名');
+    }
     final result = <NovelChapter>[];
-    final seen = <int>{};
-    for (final row in rows.take(5000)) {
-      final titleNode = source.chapterTitleSelector.trim().isEmpty
-          ? row
-          : _query(row, source.chapterTitleSelector) ?? row;
-      final linkNode = _linkNode(row, titleNode, source.chapterHrefSelector);
-      final href = linkNode?.attributes['href'] ?? '';
-      final chapterUrl = _resolvePage(href);
-      final title = _clean(titleNode.text);
-      if (title.isEmpty || chapterUrl == null) continue;
-      final id = _stableId('${source.id}|${novel.id}|$chapterUrl', 0x20000000);
-      if (!seen.add(id)) continue;
-      result.add(
-        NovelChapter(
-          title,
-          '',
-          id: id,
-          sourceId: source.id,
-          sourceUrl: chapterUrl.toString(),
-        ),
-      );
+    final seenIds = <int>{};
+    final visited = <String>{};
+    for (var page = 0; page < 20 && result.length < 5000; page++) {
+      if (!visited.add(currentUrl.toString())) break;
+      final html = await _fetch(currentUrl.toString());
+      final document = parse(html);
+      final rows = document.querySelectorAll(source.chapterItemSelector);
+      for (final row in rows) {
+        if (result.length >= 5000) break;
+        final titleNode = source.chapterTitleSelector.trim().isEmpty
+            ? row
+            : _query(row, source.chapterTitleSelector) ?? row;
+        final linkNode = _linkNode(row, titleNode, source.chapterHrefSelector);
+        final href = linkNode?.attributes['href'] ?? '';
+        final chapterUrl = _resolvePage(href);
+        final title = _clean(titleNode.text);
+        if (title.isEmpty || chapterUrl == null) continue;
+        final id = _stableId(
+          source.id + '|' + novel.id.toString() + '|' + chapterUrl.toString(),
+          0x20000000,
+        );
+        if (!seenIds.add(id)) continue;
+        result.add(
+          NovelChapter(
+            title,
+            '',
+            id: id,
+            sourceId: source.id,
+            sourceUrl: chapterUrl.toString(),
+          ),
+        );
+      }
+      if (source.chapterNextPageSelector.trim().isEmpty) break;
+      final next = _query(document, source.chapterNextPageSelector);
+      final href = next?.attributes['href'] ?? '';
+      final nextUrl = _resolvePage(href);
+      if (nextUrl == null || visited.contains(nextUrl.toString())) break;
+      currentUrl = nextUrl;
     }
     if (result.isEmpty) {
       throw const FormatException('没有解析到目录，请检查目录 CSS 选择器和链接选择器');

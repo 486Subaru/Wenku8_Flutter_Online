@@ -233,14 +233,14 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
 
     private fun decode(bytes: ByteArray, contentType: String?): String {
         if (bytes.isEmpty()) return ""
-        val declared = Regex("(?i)charset\\\\s*=\\\\s*[\\\"']?([^;\\\"'\\\\s]+)")
+        val declared = Regex("""(?i)charset\s*=\s*["']?([^;"'\s]+)""")
             .find(contentType.orEmpty())?.groupValues?.get(1)
         val head = String(bytes, 0, minOf(bytes.size, 4096), Charsets.ISO_8859_1)
-        val meta = Regex("(?i)charset\\\\s*=\\\\s*[\\\"']?([A-Za-z0-9_-]+)")
+        val meta = Regex("""(?i)charset\s*=\s*["']?([A-Za-z0-9_-]+)""")
             .find(head)?.groupValues?.get(1)
         val candidates = listOfNotNull(declared, meta, "UTF-8", "GB18030").distinct()
         for (name in candidates) {
-            val charset = runCatching { Charset.forName(name.trim().trim('"', '\\'')) }.getOrNull() ?: continue
+            val charset = runCatching { Charset.forName(name.trim().trim('"', '\'')) }.getOrNull() ?: continue
             val decoded = runCatching {
                 charset.newDecoder()
                     .onMalformedInput(CodingErrorAction.REPORT)

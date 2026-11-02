@@ -199,7 +199,6 @@ class LegacyWenkuRepository extends NovelRepository
       term,
       field: field,
       page: page,
-      refresh: refresh,
     );
     final customFuture = field == BookSearchField.id
         ? Future.value(const <NovelPage>[])
@@ -269,7 +268,6 @@ class LegacyWenkuRepository extends NovelRepository
     String term, {
     required BookSearchField field,
     required int page,
-    required bool refresh,
   }) async {
     if (field == BookSearchField.id) {
       final id = int.tryParse(term);

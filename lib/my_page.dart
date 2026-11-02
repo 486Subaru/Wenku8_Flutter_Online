@@ -147,21 +147,21 @@ class MyPage extends StatelessWidget {
                               AppText(
                                 sourceConnected
                                     ? loginSource != null
-                                          ? '\${loginSource.name}账号已连接 · 主页书源已同步'
+                                          ? '${loginSource.name}账号已连接 · 主页书源已同步'
                                           : profile == null
                                               ? '账号已连接'
-                                              : '\${profile.score} 积分 · \${profile.rank}\${features?.shelfSync == null
+                                              : '${profile.score} 积分 · ${profile.rank}${features?.shelfSync == null
                                                     ? ''
                                                     : features!.shelfSync!.syncing
-                                                    ? '\\n书架正在同步'
+                                                    ? '\n书架正在同步'
                                                     : features.shelfSync!.error != null
-                                                    ? '\\n书架待同步 · \${features.shelfSync!.error}'
+                                                    ? '\n书架待同步 · ${features.shelfSync!.error}'
                                                     : features.shelfSync!.syncedAt != null
-                                                    ? '\\n书架已与文库同步'
+                                                    ? '\n书架已与文库同步'
                                                     : ''}'
                                     : loginSource == null
                                         ? '轻小说文库账号 · 云书架与每日签到'
-                                        : '当前登录网站 · \${loginSource.name}',
+                                        : '当前登录网站 · ${loginSource.name}',
                                 style: TextStyle(
                                   fontSize: 12,
                                   height: 1.6,

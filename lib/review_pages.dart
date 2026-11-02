@@ -13,7 +13,6 @@ import 'library_state.dart';
 import 'local_platform.dart';
 import 'review_content.dart';
 import 'wenku_account.dart';
-import 'wenku_features.dart';
 import 'wenku_reviews.dart';
 
 class BookCommunityActions extends StatelessWidget {
@@ -26,54 +25,9 @@ class BookCommunityActions extends StatelessWidget {
   final Novel novel;
   final LibraryState state;
   final NovelRepository repository;
-  Future<bool> _login(BuildContext context, WenkuAccount account) async {
-    if (!account.authenticated) {
-      AppHaptics.play(context, HapticCue.action);
-      await pushNovelPage<void>(
-        context,
-        WenkuAccountPage(
-          account: account,
-          state: state,
-          repository: repository,
-        ),
-        reduceMotion: state.reduceMotion,
-      );
-    }
-    return context.mounted && account.authenticated;
-  }
-
-  Future<void> _mutate(
-    BuildContext context,
-    WenkuAccount account,
-    bool recommend,
-  ) async {
-    if (account.busy || !await _login(context, account)) return;
-    try {
-      if (recommend) {
-        await account.recommend(novel.id);
-      } else {
-        await account.addCloud(novel.id);
-      }
-      if (context.mounted) {
-        showNovelFeedback(
-          context,
-          recommend ? '推荐已提交' : '已收藏到云书架',
-          haptic: HapticCue.success,
-        );
-      }
-    } catch (error) {
-      if (context.mounted) {
-        showNovelFeedback(
-          context,
-          WenkuAccount.describeError(error),
-          haptic: HapticCue.error,
-        );
-      }
-    }
-  }
 
   Future<void> _share(BuildContext context) async {
-    final text = '${novel.title}\n${novel.author}';
+    final text = novel.title + '\n' + novel.author;
     try {
       if (LocalPlatform.android) {
         await LocalPlatform.shareText(text);
@@ -87,72 +41,12 @@ class BookCommunityActions extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final features = WenkuFeaturesScope.maybeOf(context);
-    if (features == null) return const SizedBox.shrink();
-    return AnimatedBuilder(
-      animation: features.account,
-      builder: (context, _) {
-        final actions = [
-          GlassTextButton(
-            key: const ValueKey('detail-cloud-save'),
-            haptic: null,
-            compact: true,
-            onPressed: features.account.busy
-                ? null
-                : () => _mutate(context, features.account, false),
-            child: const AppText('云端收藏'),
-          ),
-          GlassTextButton(
-            key: const ValueKey('detail-recommend'),
-            haptic: null,
-            compact: true,
-            onPressed: features.account.busy
-                ? null
-                : () => _mutate(context, features.account, true),
-            child: const AppText('推荐作品'),
-          ),
-          GlassTextButton(
-            key: const ValueKey('detail-reviews'),
-            compact: true,
-            child: const AppText('评论'),
-            onPressed: () => pushNovelPage<void>(
-              context,
-              WenkuReviewsPage(
-                novel: novel,
-                account: features.account,
-                state: state,
-                repository: repository,
-              ),
-              reduceMotion: state.reduceMotion,
-            ),
-          ),
-          GlassTextButton(
-            key: const ValueKey('detail-share'),
-            compact: true,
-            child: const AppText('分享'),
-            onPressed: () => _share(context),
-          ),
-        ];
-        final row = Row(
-          key: const ValueKey('detail-community-actions'),
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (var index = 0; index < actions.length; index++) ...[
-              if (index > 0) const SizedBox(width: 8),
-              actions[index],
-            ],
-          ],
-        );
-        return AppScrollHaptics(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: row,
-          ),
-        );
-      },
-    );
-  }
+  Widget build(BuildContext context) => GlassTextButton(
+    key: const ValueKey('detail-share'),
+    compact: true,
+    child: const AppText('分享'),
+    onPressed: () => _share(context),
+  );
 }
 
 class WenkuReviewsPage extends StatefulWidget {

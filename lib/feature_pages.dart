@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import 'app_interactions.dart';
 import 'app_ui.dart';
@@ -182,9 +181,6 @@ class WenkuAccountPage extends StatefulWidget {
 }
 
 class _WenkuAccountPageState extends State<WenkuAccountPage> {
-  final _username = TextEditingController();
-  final _password = TextEditingController();
-  bool _obscure = true;
   @override
   void initState() {
     super.initState();
@@ -193,52 +189,28 @@ class _WenkuAccountPageState extends State<WenkuAccountPage> {
     });
   }
 
-  @override
-  void dispose() {
-    _username.dispose();
-    _password.dispose();
-    super.dispose();
-  }
-
   Future<void> _run(Future<void> Function() work, String success) async {
     if (widget.account.busy) return;
-    FocusManager.instance.primaryFocus?.unfocus();
     try {
       await work();
       if (mounted) showNovelFeedback(context, success);
     } catch (_) {
-      /* The account's live region displays the concrete failure. */
+      // The account's live region displays the concrete failure.
     }
   }
 
   Future<void> _login() async {
-    final account = widget.account;
-    if (account.busy) return;
-    final revision = account.sessionRevision;
-    FocusManager.instance.primaryFocus?.unfocus();
-    try {
-      await account.login(_username.text, _password.text);
-      if (mounted) showNovelFeedback(context, '登录成功');
-    } catch (_) {
-      // The account's live region displays the concrete failure.
-    } finally {
-      if (mounted) {
-        // Finish before clearing: the system must see the submitted password.
-        // A successful API login still counts if only profile loading failed.
-        TextInput.finishAutofillContext(
-          shouldSave:
-              account.authenticated && account.sessionRevision != revision,
-        );
-        _password.clear();
-      }
-    }
+    await _run(
+      () => widget.account.login('', ''),
+      '已完成文库官网登录',
+    );
   }
 
   Future<void> _logout() async {
     final confirmed = await confirmNovelAction(
       context,
       title: '退出账号？',
-      message: '仅退出云端账号，本机书架、阅读进度、书签与离线章节均保留。',
+      message: '只清除文库官网登录状态，本机书架、阅读进度、书签与离线章节均保留。',
       confirmLabel: '退出账号',
       reduceMotion: widget.state.reduceMotion,
     );
@@ -246,204 +218,85 @@ class _WenkuAccountPageState extends State<WenkuAccountPage> {
   }
 
   @override
-  Widget build(BuildContext context) => AutofillGroup(
-    // Leaving/cancelling the form must not offer to save unverified input.
-    onDisposeAction: AutofillContextAction.cancel,
-    child: AnimatedBuilder(
-      animation: widget.account,
-      builder: (context, _) {
-        final account = widget.account;
-        final profile = account.profile;
-        return ArchiveFeaturePage(
-          title: '文库账号',
-          code: 'ACCOUNT / PERSONAL ARCHIVE',
-          child: LoadedContentSequence(
-            generation: (account.authenticated, profile?.id),
-            child: ListView(
-              key: ValueKey(account.authenticated),
-              padding: featurePadding(context),
-              children: [
-                LoadedContentItem(
-                  index: 0,
-                  child: AppText(
-                    account.authenticated
-                        ? profile?.displayName ?? '已登录'
-                        : '连接你的文库',
-                    style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w600,
-                    ),
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: widget.account,
+    builder: (context, _) {
+      final account = widget.account;
+      return ArchiveFeaturePage(
+        title: '文库账号',
+        code: 'ACCOUNT / PERSONAL ARCHIVE',
+        child: LoadedContentSequence(
+          generation: account.authenticated,
+          child: ListView(
+            key: ValueKey(account.authenticated),
+            padding: featurePadding(context),
+            children: [
+              LoadedContentItem(
+                index: 0,
+                child: AppText(
+                  account.authenticated ? '已连接文库账号' : '连接你的文库',
+                  style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w600,
                   ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              AppText(
+                account.authenticated
+                    ? '官网登录状态已保存在本机。本阶段先恢复在线书目与阅读；云书架、签到和评论功能将在后续阶段接入。'
+                    : '点击下方按钮打开文库官方登录页面。账号密码和网站验证都由官网处理，应用不会把密码发送给第三方中继。',
+              ),
+              const SizedBox(height: 24),
+              if (!account.authenticated)
+                ContentPanel(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      GlassTextButton(
+                        key: const ValueKey('account-login'),
+                        onPressed: account.busy ? null : _login,
+                        child: const AppText('打开官网登录'),
+                      ),
+                    ],
+                  ),
+                )
+              else ...[
+                ContentPanel(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: const [
+                      ArchiveCode('SESSION / READY'),
+                      SizedBox(height: 10),
+                      AppText('在线书目、搜索和章节阅读将使用当前官网会话。'),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                GlassTextButton(
+                  key: const ValueKey('account-reverify'),
+                  onPressed: account.busy ? null : _login,
+                  child: const AppText('重新打开官网验证'),
                 ),
                 const SizedBox(height: 12),
-                AppText(
-                  account.authenticated
-                      ? '登录后自动同步收藏，本机阅读进度与原书保留。'
-                      : '使用原版文库账号。未登录时仍可搜索、收藏到本机和离线阅读。',
+                GlassTextButton(
+                  key: const ValueKey('account-logout'),
+                  onPressed: account.busy ? null : _logout,
+                  child: const AppText('退出账号'),
                 ),
-                const SizedBox(height: 24),
-                if (!account.authenticated)
-                  ContentPanel(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        TextField(
-                          key: const ValueKey('account-username'),
-                          onTap: () =>
-                              AppHaptics.play(context, HapticCue.selection),
-                          onTapAlwaysCalled: true,
-                          controller: _username,
-                          enabled: !account.busy,
-                          autocorrect: false,
-                          enableSuggestions: false,
-                          textInputAction: TextInputAction.next,
-                          autofillHints: const [AutofillHints.username],
-                          maxLength: 254,
-                          decoration: InputDecoration(
-                            labelText: appText(context, '用户名 / 邮箱'),
-                            hintText: appText(context, '请输入用户名或邮箱'),
-                            counterText: '',
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          key: const ValueKey('account-password'),
-                          onTap: () =>
-                              AppHaptics.play(context, HapticCue.selection),
-                          onTapAlwaysCalled: true,
-                          controller: _password,
-                          enabled: !account.busy,
-                          obscureText: _obscure,
-                          autocorrect: false,
-                          enableSuggestions: false,
-                          keyboardType: TextInputType.visiblePassword,
-                          textInputAction: TextInputAction.done,
-                          autofillHints: const [AutofillHints.password],
-                          smartDashesType: SmartDashesType.disabled,
-                          smartQuotesType: SmartQuotesType.disabled,
-                          maxLength: 30,
-                          onSubmitted: (_) => _login(),
-                          decoration: InputDecoration(
-                            labelText: appText(context, '密码'),
-                            hintText: appText(context, '请输入密码'),
-                            counterText: '',
-                            suffixIcon: IconButton(
-                              tooltip: _obscure ? '显示密码' : '隐藏密码',
-                              icon: ArchiveIcon(
-                                _obscure
-                                    ? CupertinoIcons.eye
-                                    : CupertinoIcons.eye_slash,
-                              ),
-                              onPressed: () =>
-                                  setState(() => _obscure = !_obscure),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        GlassTextButton(
-                          key: const ValueKey('account-login'),
-                          onPressed: account.busy ? null : _login,
-                          child: const AppText('登录'),
-                        ),
-                      ],
-                    ),
-                  )
-                else ...[
-                  LoadedContentItem(
-                    index: 1,
-                    child: ContentPanel(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (profile == null && account.busy)
-                            const SizedBox(
-                              height: 72,
-                              child: LoadingSkeleton(
-                                layout: SkeletonLayout.actions,
-                              ),
-                            )
-                          else ...[
-                            ArchiveCode(
-                              profile == null
-                                  ? 'SESSION / READY'
-                                  : 'UID / ${profile.id}',
-                            ),
-                            const SizedBox(height: 12),
-                            if (profile != null) ...[
-                              AppText(profile.username),
-                              const SizedBox(height: 8),
-                              AppText(
-                                '${profile.rank}  ·  ${profile.score} 积分  ·  ${profile.experience} 经验',
-                              ),
-                            ],
-                          ],
-                          const SizedBox(height: 12),
-                          Wrap(
-                            spacing: 12,
-                            children: [
-                              GlassTextButton(
-                                key: const ValueKey('account-sign'),
-                                onPressed: account.busy || account.signedToday
-                                    ? null
-                                    : () => _run(account.signIn, '今日签到已完成'),
-                                child: AppText(
-                                  account.signedToday ? '今日已签到' : '每日签到',
-                                ),
-                              ),
-                              GlassTextButton(
-                                onPressed: account.busy
-                                    ? null
-                                    : () =>
-                                          _run(account.refreshProfile, '账号已更新'),
-                                child: const AppText('刷新资料'),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  LoadedContentItem(
-                    index: 2,
-                    child: FeatureEntry(
-                      key: const ValueKey('account-cloud'),
-                      title: '云书架',
-                      subtitle: '收藏自动同步，查看云端书目',
-                      icon: CupertinoIcons.cloud,
-                      onTap: account.busy
-                          ? null
-                          : () => pushNovelPage<void>(
-                              context,
-                              CloudBookshelfPage(
-                                account: account,
-                                state: widget.state,
-                                repository: widget.repository,
-                              ),
-                              reduceMotion: widget.state.reduceMotion,
-                            ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  GlassTextButton(
-                    key: const ValueKey('account-logout'),
-                    onPressed: account.busy ? null : _logout,
-                    child: const AppText('退出账号'),
-                  ),
-                ],
-                if (account.busy) ...[
-                  const SizedBox(height: 20),
-                  const InlineSkeleton(label: '正在处理账号操作'),
-                  const SizedBox(height: 10),
-                  AppText(account.operation ?? ''),
-                ],
-                FeatureError(account.error),
               ],
-            ),
+              if (account.busy) ...[
+                const SizedBox(height: 20),
+                const InlineSkeleton(label: '正在处理账号操作'),
+                const SizedBox(height: 10),
+                AppText(account.operation ?? ''),
+              ],
+              FeatureError(account.error),
+            ],
           ),
-        );
-      },
-    ),
+        ),
+      );
+    },
   );
 }
 
@@ -723,6 +576,7 @@ class _PublicationLibraryPageState extends State<PublicationLibraryPage> {
   PublicationLibrary? _selected;
   NovelFeedController? _feed;
   String? _error;
+  bool _needsLogin = false;
   late int _accountRevision;
   late int _publicationRevision;
   late bool _authenticated;
@@ -763,7 +617,10 @@ class _PublicationLibraryPageState extends State<PublicationLibraryPage> {
   }
 
   Future<void> _load() async {
-    setState(() => _error = null);
+    setState(() {
+      _error = null;
+      _needsLogin = false;
+    });
     try {
       // Restoring the shared account is part of entering this catalogue, not a
       // reason to issue a guest request and replace it again after restoration.
@@ -776,7 +633,13 @@ class _PublicationLibraryPageState extends State<PublicationLibraryPage> {
         _select(libraries.first);
       }
     } catch (error) {
-      if (mounted) setState(() => _error = WenkuAccount.describeError(error));
+      if (mounted) {
+        setState(() {
+          _error = WenkuAccount.describeError(error);
+          _needsLogin = error is OnlineAuthenticationRequired ||
+              error is OnlineChallengeRequired;
+        });
+      }
     }
   }
 
@@ -878,19 +741,19 @@ class _PublicationLibraryPageState extends State<PublicationLibraryPage> {
         onRetry: _feed!.retry,
       );
     }
-    if (failure is OnlineAuthenticationRequired && widget.account != null) {
+    if ((failure is OnlineAuthenticationRequired ||
+            failure is OnlineChallengeRequired) &&
+        widget.account != null) {
       return ContentNotice(
-        icon: widget.account!.authenticated
-            ? CupertinoIcons.arrow_clockwise
-            : CupertinoIcons.person_crop_circle,
-        title: widget.account!.authenticated ? '分类暂未读取成功' : '此分类需要文库账号',
-        message: widget.account!.authenticated
-            ? '账号连接正常，分类服务暂未返回书目。请稍后重新加载。'
-            : '登录后可读取出版分类。最近更新、排行榜和搜索仍可直接使用。',
-        actionLabel: widget.account!.authenticated ? '重新加载' : '登录账号',
-        onRetry: widget.account!.authenticated
-            ? () => _select(_selected!, force: true)
-            : _loginForLibrary,
+        icon: CupertinoIcons.person_crop_circle,
+        title: failure is OnlineChallengeRequired
+            ? '需要完成官网验证'
+            : '需要重新连接文库账号',
+        message: failure is OnlineChallengeRequired
+            ? '请打开文库官网页面完成验证，再重新加载分类。'
+            : '当前官网会话无效或已过期。请重新登录后再读取分类。',
+        actionLabel: '打开官网登录',
+        onRetry: _loginForLibrary,
       );
     }
     return DiscoverPage(
@@ -921,9 +784,12 @@ class _PublicationLibraryPageState extends State<PublicationLibraryPage> {
         ? (_error != null
               ? ContentNotice(
                   icon: CupertinoIcons.wifi_exclamationmark,
-                  title: '文库分类加载失败',
+                  title: _needsLogin ? '需要连接文库账号' : '文库分类加载失败',
                   message: _error!,
-                  onRetry: _load,
+                  actionLabel: _needsLogin ? '登录 / 官网验证' : '重试',
+                  onRetry: _needsLogin && widget.account != null
+                      ? _loginForLibrary
+                      : _load,
                 )
               : const LibrarySkeleton())
         : AnimatedBuilder(

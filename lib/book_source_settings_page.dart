@@ -23,23 +23,118 @@ class BookSourceSettingsPage extends StatelessWidget {
     );
   }
 
-  Future<void> _login(BuildContext context, BookSourceConfig source) async {
+  Future<void> _login(
+    BuildContext context,
+    BookSourceStore store,
+    BookSourceConfig source,
+  ) async {
     try {
       final loginUrl = source.baseUri.resolve(source.loginUrl).toString();
       final accepted = await LegacyTransport.openSourceLogin(
         loginUrl,
         baseUrl: source.baseUrl,
       );
+      if (accepted) await store.completeSourceLogin(source.id);
       if (context.mounted) {
         showNovelFeedback(
           context,
-          accepted ? '已检测到该网站 Cookie；登录是否成功以网站页面为准' : '尚未检测到该网站 Cookie，请完成登录后重试',
+          accepted
+              ? '已完成 \${source.name} 登录，主页书源已切换'
+              : '尚未确认登录，请在网站页面完成登录后点击“完成登录”',
         );
       }
     } catch (error) {
       if (context.mounted) {
         showNovelFeedback(context, error.toString().replaceFirst('FormatException: ', ''));
       }
+    }
+  }
+
+  Future<void> _chooseHomepageSource(
+    BuildContext context,
+    BookSourceStore store,
+  ) async {
+    const official = '__official_wenku8__';
+    final selected = await showJellySheet<String>(
+      context: context,
+      reduceMotion: reduceMotion,
+      builder: (sheet) {
+        Widget option(String id, String title, String subtitle) {
+          final active = id == official
+              ? store.homepageSourceId == null
+              : store.homepageSourceId == id;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: ContentPanel(
+              onTap: () => Navigator.pop(sheet, id),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        AppText(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 4),
+                        AppText(
+                          subtitle,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(sheet).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (active) const ArchiveIcon(Icons.check_circle, size: 18),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const AppText(
+                '选择主页书源',
+                style: TextStyle(fontSize: 21, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              const AppText('发现、搜索、作品详情、目录和正文将优先使用所选网站。'),
+              const SizedBox(height: 18),
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(sheet).size.height * .55,
+                ),
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    option(official, '轻小说文库（默认）', 'www.wenku8.net'),
+                    for (final source in store.sources)
+                      option(source.id, source.name, source.baseUrl),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              GlassTextButton(
+                onPressed: () => Navigator.pop(sheet),
+                child: const AppText('取消'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (selected == null) return;
+    await store.setHomepageSourceId(selected == official ? null : selected);
+    if (context.mounted) {
+      final name = selected == official
+          ? '轻小说文库（默认）'
+          : store.byId(selected)?.name ?? '所选书源';
+      showNovelFeedback(context, '主页书源已切换为 \${name}');
     }
   }
 
@@ -97,15 +192,43 @@ class BookSourceSettingsPage extends StatelessWidget {
           padding: featurePadding(context),
           children: [
             ContentPanel(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: const [
-                  AppText(
-                    '默认主站 · 轻小说文库',
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+              onTap: () => _chooseHomepageSource(context, store),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const AppText(
+                          '主页书源',
+                          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 7),
+                        AppText(
+                          store.homepageSource?.name ?? '轻小说文库（默认）',
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 4),
+                        AppText(
+                          store.homepageSource?.baseUrl ?? 'www.wenku8.net',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 7),
+                        AppText(
+                          '发现、搜索、详情、目录与正文使用此网站。点击切换。',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  SizedBox(height: 8),
-                  AppText('www.wenku8.net · 主站登录、首页与默认发现页保持不变。其他书源独立配置；只有开启“参与搜索”的网站才会加入全局搜索。'),
+                  const SizedBox(width: 10),
+                  const ArchiveIcon(CupertinoIcons.chevron_right, size: 16),
                 ],
               ),
             ),
@@ -196,7 +319,7 @@ class BookSourceSettingsPage extends StatelessWidget {
                           _smallAction(
                             context,
                             '独立登录',
-                            () => _login(context, source),
+                            () => _login(context, store, source),
                           ),
                         _smallAction(context, '复制配置', () => _copy(context, source)),
                         _smallAction(context, '删除', () => _remove(context, store, source)),

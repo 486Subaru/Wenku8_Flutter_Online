@@ -61,7 +61,9 @@ const _linovelNetReader = BookSourceConfig(
   chapterItemSelector: '.section-list .chapter',
   chapterTitleSelector: 'a',
   chapterHrefSelector: 'a',
-  chapterContentSelector: '.article-text > p',
+  // Generic chapter parsing selects one root element and then walks all of its
+  // descendants, so use the whole article container rather than only the first p.
+  chapterContentSelector: '.article-text',
   imageHosts: ['linovel.net'],
 );
 

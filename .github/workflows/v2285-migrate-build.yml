@@ -1,4 +1,5 @@
 name: One-time v2285 source migration and APK build
+# retry revision: patched v2284 -> v2285
 
 on:
   push:

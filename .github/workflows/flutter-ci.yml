@@ -21,6 +21,7 @@ jobs:
       - name: Apply v2284 network compatibility patch
         run: |
           python3 tool/apply_v2284_patch.py
+          python3 tool/apply_v2284_postpatch.py
           git diff --check
 
       - name: Set up Java 17

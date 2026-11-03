@@ -13,7 +13,9 @@ def replace_once(path: str, old: str, new: str) -> None:
     target.write_text(text.replace(old, new, 1), encoding='utf-8')
 
 
-replace_once('pubspec.yaml', 'version: 0.5.5+2283', 'version: 0.5.5+2285')
+# The v2284 compatibility patch runs immediately before this migration and
+# already promotes pubspec from +2283 to +2284.
+replace_once('pubspec.yaml', 'version: 0.5.5+2284', 'version: 0.5.5+2285')
 replace_once(
     'android/app/build.gradle.kts',
     'versionName = "0.5.5-online-fix"',

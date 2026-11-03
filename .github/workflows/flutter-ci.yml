@@ -42,8 +42,12 @@ jobs:
       - name: Build ARM64 release APK
         run: flutter build apk --release --target-platform android-arm64 --split-per-abi
 
-      - name: Run Android native unit tests
-        run: cd android && ./gradlew testDebugUnitTest --no-daemon
+      # Only run this application's native tests. Running the aggregate
+      # testDebugUnitTest task also executes unit tests bundled by Android
+      # dependencies (for example url_launcher_android/Robolectric), which can
+      # fail because of the CI SDK/JDK matrix even when this app is healthy.
+      - name: Run app Android native unit tests
+        run: cd android && ./gradlew :app:testDebugUnitTest --no-daemon
 
       - name: Upload ARM64 APK
         uses: actions/upload-artifact@v4

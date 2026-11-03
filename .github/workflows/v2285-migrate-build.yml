@@ -26,49 +26,7 @@ jobs:
 
       - name: Finalize v2285 source and metadata
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import shutil
-
-          def replace_once(path, old, new):
-              p = Path(path)
-              text = p.read_text(encoding='utf-8')
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f'{path}: expected one match, found {count}: {old!r}')
-              p.write_text(text.replace(old, new, 1), encoding='utf-8')
-
-          replace_once('pubspec.yaml', 'version: 0.5.5+2283', 'version: 0.5.5+2285')
-          replace_once('android/app/build.gradle.kts', 'versionName = "0.5.5-online-fix"', 'versionName = "0.5.5"')
-          replace_once('android/app/build.gradle.kts', 'manifestPlaceholders["wenkuAppLabel"] = "日轻修正版"', 'manifestPlaceholders["wenkuAppLabel"] = "日轻"')
-          replace_once('lib/updates/app_updates.dart', 'const currentAppBuild = 2276;', 'const currentAppBuild = 2285;')
-          shutil.copyfile('tool/v2285_release_content.dart', 'lib/updates/current_release_content.dart')
-
-          ci_path = Path('.github/workflows/flutter-ci.yml')
-          ci = ci_path.read_text(encoding='utf-8')
-          patch_step = """      - name: Apply v2284 network compatibility patch
-        run: |
-          python3 tool/apply_v2284_patch.py
-          python3 tool/apply_v2284_postpatch.py
-          git diff --check
-
-"""
-          if ci.count(patch_step) != 1:
-              raise SystemExit('flutter-ci.yml: v2284 patch step not found exactly once')
-          ci = ci.replace(patch_step, '', 1)
-          ci = ci.replace('Wenku8-0.5.5-online-fix-arm64-v2284', 'riqing-0.5.5-arm64-v2285')
-          ci_path.write_text(ci, encoding='utf-8')
-
-          for path in [
-              'tool/apply_v2284_patch.py',
-              'tool/apply_v2284_postpatch.py',
-              'tool/v2285_release_content.dart',
-              '.github/workflows/v2285-migrate-build.yml',
-          ]:
-              p = Path(path)
-              if p.exists():
-                  p.unlink()
-          PY
+          python3 tool/v2285_migrate.py
           git diff --check
 
       - name: Set up Java 17
@@ -98,14 +56,6 @@ jobs:
       - name: Run Android native unit tests
         run: cd android && ./gradlew :app:testDebugUnitTest --no-daemon
 
-      - name: Commit permanent v2285 source
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
-          git commit -m 'Land v2285 network source and 日轻 release announcement'
-          git push origin HEAD:riqing-custom-sources
-
       - name: Upload v2285 ARM64 APK
         uses: actions/upload-artifact@v4
         with:
@@ -113,3 +63,11 @@ jobs:
           path: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
           if-no-files-found: error
           retention-days: 14
+
+      - name: Commit permanent v2285 source
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Land v2285 network source and 日轻 release announcement'
+          git push origin HEAD:riqing-custom-sources

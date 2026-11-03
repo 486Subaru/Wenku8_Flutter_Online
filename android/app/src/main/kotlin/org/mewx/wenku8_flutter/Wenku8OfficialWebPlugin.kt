@@ -53,7 +53,7 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
         private const val CHANNEL = "org.mewx.wenku8/official_web"
         private const val LOGIN_REQUEST = 5081
         private const val SOURCE_LOGIN_REQUEST = 5082
-        private const val BASE = "https://www.wenku8.cc"
+        private const val BASE = "https://www.wenku8.net"
         private const val MAX_TEXT_BYTES = 4 * 1024 * 1024
         private const val MAX_IMAGE_BYTES = 8 * 1024 * 1024
     }
@@ -487,91 +487,67 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
         }
     }
 
-    private fun lightNovelSession(rawBaseUrl: String, requestHosts: List<String>): LightNovelSession {
+    private fun lightNovelSearch(rawBaseUrl: String, query: String, page: Int, requestHosts: List<String>): String {
         val origin = runCatching { URL(rawBaseUrl) }
             .getOrElse { throw WebFailure("SOURCE_BAD_URL", "轻之国度网站地址无效") }
         val siteHosts = setOf("www.lightnovel.fun", "lightnovel.fun")
         if (!safeHttps(origin) || origin.host.lowercase() !in siteHosts) {
             throw WebFailure("SOURCE_BAD_URL", "轻之国度书源必须使用 HTTPS 官方域名")
         }
-        val candidates = (listOf(origin.host) + requestHosts).map { it.trim().lowercase() }
-            .filter { it in siteHosts }.distinct()
-        for (host in candidates) {
-            val cookieUrl = "https://" + host + "/proxy/api/search/search-result"
-            val credentials = LightNovelTokenParser.fromCookieHeader(
-                Wenku8SessionCookies.cookieHeader(cookieUrl),
-            ) ?: continue
-            return LightNovelSession(host, credentials.securityKey, credentials.uid)
-        }
-        throw WebFailure("SOURCE_LOGIN_REQUIRED", "没有读取到有效的轻之国度 token 凭据。请在书源卡片点击“独立登录”，完成账号登录后再重试")
-    }
 
-    private fun lightNovelSearch(rawBaseUrl: String, query: String, page: Int, requestHosts: List<String>): String {
-        val session = lightNovelSession(rawBaseUrl, requestHosts)
-        if (query.isBlank()) return lightNovelBrowse(rawBaseUrl, requestHosts, session, page)
+        // The current PC proxy accepts credential-free reads. The BFF endpoint
+        // replaced the legacy search-result endpoint in 2026. Page is zero-based
+        // on this endpoint while the Flutter repository is one-based.
         val payload = JSONObject()
-            .put("is_encrypted", 0).put("platform", "pc").put("client", "web").put("sign", "").put("gz", 0)
-            .put("d", JSONObject().put("q", query).put("page", page).put("type", 0).put("security_key", session.securityKey))
-        val endpoint = "https://" + session.host + "/proxy/api/search/search-result"
-        val reply = requestSource(endpoint, rawBaseUrl, requestHosts, emptyList(), MAX_TEXT_BYTES,
-            image = false, method = "POST", requestBody = payload.toString().toByteArray(Charsets.UTF_8),
-            contentType = "application/json; charset=UTF-8")
-        return decode(reply.bytes, reply.contentType)
-    }
+            .put("q", query)
+            .put("page", maxOf(0, page - 1))
+            .put("pageSize", 20)
+            .put("sort", if (query.isBlank()) "new" else "relevance")
+        if (query.isBlank()) payload.put("channel_code", "lightnovel")
 
-    private fun lightNovelBrowse(rawBaseUrl: String, requestHosts: List<String>, session: LightNovelSession, page: Int): String {
-        if (session.uid.isBlank()) throw WebFailure("SOURCE_LOGIN_REQUIRED", "轻之国度登录凭据不完整，请重新完成独立登录")
-        val baseBody = JSONObject()
-            .put("is_encrypted", 0).put("platform", "pc").put("client", "web").put("sign", "").put("gz", 0)
-            .put("d", JSONObject().put("uid", session.uid).put("page", page.toString())
-                .put("security_key", session.securityKey).put("parent_gid", 3))
-        val categoryEndpoint = "https://" + session.host + "/proxy/api/category/get-categories"
-        val categoryReply = requestSource(categoryEndpoint, rawBaseUrl, requestHosts, emptyList(), MAX_TEXT_BYTES,
-            image = false, method = "POST", requestBody = baseBody.toString().toByteArray(Charsets.UTF_8),
-            contentType = "application/json; charset=UTF-8")
-        val categoryJson = runCatching { JSONObject(decode(categoryReply.bytes, categoryReply.contentType)) }
-            .getOrElse { throw WebFailure("SOURCE_API_ERROR", "轻之国度首页分类接口没有返回有效 JSON") }
-        val categoryCode = categoryJson.opt("code")
-        if (categoryCode != null && categoryCode.toString() !in setOf("0", "200")) {
-            throw WebFailure("SOURCE_API_ERROR", "轻之国度首页分类读取失败：" + categoryJson.optString("message", categoryJson.optString("msg")))
+        val endpoint = "https://" + origin.host + "/api/pc-proxy/api/bff/apk-search-result-v1"
+        val reply = requestSource(
+            endpoint,
+            rawBaseUrl,
+            requestHosts,
+            emptyList(),
+            MAX_TEXT_BYTES,
+            image = false,
+            method = "POST",
+            requestBody = payload.toString().toByteArray(Charsets.UTF_8),
+            contentType = "application/json; charset=UTF-8",
+        )
+        val root = runCatching { JSONObject(decode(reply.bytes, reply.contentType)) }
+            .getOrElse { throw WebFailure("SOURCE_API_ERROR", "轻之国度搜索接口没有返回有效 JSON") }
+        if (root.optInt("code", -1) != 0) {
+            throw WebFailure("SOURCE_API_ERROR", "轻之国度搜索接口暂时不可用")
         }
-        val categories = categoryJson.optJSONArray("data") ?: categoryJson.optJSONObject("data")?.optJSONArray("list")
-            ?: throw WebFailure("SOURCE_API_ERROR", "轻之国度没有返回首页分类列表")
-        if (categories.length() == 0) throw WebFailure("SOURCE_API_ERROR", "轻之国度首页分类列表为空")
-        var selected: JSONObject? = null
-        for (index in 0 until categories.length()) {
-            val candidate = categories.optJSONObject(index) ?: continue
-            if (selected == null) selected = candidate
-            val name = candidate.optString("name")
-            if (name.contains("最近更新") || name.contains("新更") || name.contains("最新")) {
-                selected = candidate
-                break
-            }
-        }
-        val gid = selected?.opt("gid") ?: throw WebFailure("SOURCE_API_ERROR", "轻之国度首页分类缺少 gid")
-        val feedBody = JSONObject(baseBody.toString())
-        feedBody.getJSONObject("d").put("gid", gid).put("page", page.toString())
-        val feedEndpoint = "https://" + session.host + "/proxy/api/category/get-article-by-cate"
-        val feedReply = requestSource(feedEndpoint, rawBaseUrl, requestHosts, emptyList(), MAX_TEXT_BYTES,
-            image = false, method = "POST", requestBody = feedBody.toString().toByteArray(Charsets.UTF_8),
-            contentType = "application/json; charset=UTF-8")
-        val feedJson = runCatching { JSONObject(decode(feedReply.bytes, feedReply.contentType)) }
-            .getOrElse { throw WebFailure("SOURCE_API_ERROR", "轻之国度首页列表接口没有返回有效 JSON") }
-        val feedCode = feedJson.opt("code")
-        if (feedCode != null && feedCode.toString() !in setOf("0", "200")) {
-            throw WebFailure("SOURCE_API_ERROR", "轻之国度首页列表读取失败：" + feedJson.optString("message", feedJson.optString("msg")))
-        }
-        val feedData = feedJson.optJSONObject("data") ?: throw WebFailure("SOURCE_API_ERROR", "轻之国度首页列表缺少 data")
-        val list = feedData.optJSONArray("list") ?: feedData.optJSONArray("collections") ?: org.json.JSONArray()
-        val bookRows = org.json.JSONArray()
+        val data = root.optJSONObject("data")
+            ?: throw WebFailure("SOURCE_API_ERROR", "轻之国度搜索结果缺少 data")
+        val list = data.optJSONArray("list") ?: org.json.JSONArray()
+        val rows = org.json.JSONArray()
         for (index in 0 until list.length()) {
-            val item = list.optJSONObject(index) ?: continue
-            if (item.optInt("sid", 0) == 5 || item.has("is_top")) continue
-            bookRows.put(item)
+            val source = list.optJSONObject(index) ?: continue
+            val bookId = source.optLong("book_id", 0L)
+            if (bookId <= 0L) continue
+            val item = JSONObject(source.toString())
+            if (!item.has("author") && item.has("author_name")) {
+                item.put("author", item.optString("author_name"))
+            }
+            if (!item.has("cover") && item.has("cover_url")) {
+                item.put("cover", item.optString("cover_url"))
+            }
+            if (!item.has("group_name")) {
+                val tags = item.optJSONArray("visible_tags")
+                if (tags != null && tags.length() > 0) item.put("group_name", tags.optString(0))
+            }
+            rows.put(item)
         }
-        val normalized = JSONObject().put("collections", bookRows).put("articles", org.json.JSONArray())
-        val pagination = feedData.optJSONObject("pagination") ?: feedData.optJSONObject("page_info")
-        if (pagination != null) normalized.put("pagination", pagination)
+        val normalized = JSONObject()
+            .put("collections", rows)
+            .put("articles", org.json.JSONArray())
+        data.optJSONObject("pagination")?.let { normalized.put("pagination", it) }
+        data.optJSONObject("page_info")?.let { normalized.put("page_info", it) }
         return JSONObject().put("code", 0).put("data", normalized).toString()
     }
 

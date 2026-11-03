@@ -386,8 +386,8 @@ class BookSourceStore extends ChangeNotifier {
     _sources.where((source) => source.loginUrl.trim().isNotEmpty),
   );
 
-  /// Built-in site shortcuts. Only the Light Novel Kingdom preset currently
-  /// has a native reader adapter; the others are isolated WebView login entries.
+  /// Built-in site shortcuts. Light Novel Kingdom uses its API adapter and
+  /// Linovel uses the generic CSS reader; login-only entries stay isolated.
   static const List<BookSourceConfig> builtInPresets = [
     BookSourceConfig(
       id: 'lightnovel-fun',
@@ -407,10 +407,24 @@ class BookSourceStore extends ChangeNotifier {
     BookSourceConfig(
       id: 'linovelib-web',
       name: '哔哩轻小说',
-      baseUrl: 'https://www.linovelib.com/',
+      baseUrl: 'https://www.bilinovel.net/',
       engine: 'web_login_only',
       enabled: false,
       loginUrl: '/login.php',
+      loginHosts: [
+        'bilinovel.net',
+        'www.bilinovel.com',
+        'bilinovel.com',
+        'www.linovelib.com',
+        'linovelib.com',
+      ],
+      requestHosts: [
+        'bilinovel.net',
+        'www.bilinovel.com',
+        'bilinovel.com',
+        'www.linovelib.com',
+        'linovelib.com',
+      ],
       searchUrlTemplate: '',
       searchItemSelector: '',
       searchTitleSelector: '',
@@ -434,14 +448,32 @@ class BookSourceStore extends ChangeNotifier {
       id: 'linovel-net-web',
       name: '轻之文库',
       baseUrl: 'https://www.linovel.net/',
-      engine: 'web_login_only',
-      enabled: false,
+      engine: 'css',
+      enabled: true,
       loginUrl: '/auth/login',
-      searchUrlTemplate: '',
-      searchItemSelector: '',
-      searchTitleSelector: '',
-      chapterItemSelector: '',
-      chapterContentSelector: '',
+      loginHosts: ['linovel.net'],
+      requestHosts: ['linovel.net'],
+      browseUrlTemplate: '/cat/-1.html?sort=hot&sign=-1&page={page}',
+      searchUrlTemplate: '/search/?kw={keyword}&page={page}',
+      searchItemSelector: '.search-book, .book-draw',
+      searchTitleSelector: '.book-name',
+      searchAuthorSelector: '.book-extra',
+      searchGenreSelector: '.book-tag',
+      searchSummarySelector: '.book-intro',
+      searchCoverSelector: '.book-cover img',
+      searchCoverAttribute: 'src',
+      detailTitleSelector: '.book-title',
+      detailAuthorSelector: '.novelist > .name > a',
+      detailSummarySelector: '.about-text',
+      detailGenreSelector: '.book-cats',
+      detailStatusSelector: '.book-data > span:nth-child(7)',
+      detailCoverSelector: '.book-cover img',
+      detailCoverAttribute: 'src',
+      chapterItemSelector: '.section-list .chapter',
+      chapterTitleSelector: 'a',
+      chapterHrefSelector: 'a',
+      chapterContentSelector: '.article-text',
+      imageHosts: ['linovel.net'],
     ),
   ];
 

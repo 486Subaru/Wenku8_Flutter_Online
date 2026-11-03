@@ -162,7 +162,7 @@ class BookSourceSettingsPage extends StatelessWidget {
                 child: ListView(
                   shrinkWrap: true,
                   children: [
-                    option(official, '轻小说文库（默认）', 'www.wenku8.cc'),
+                    option(official, '轻小说文库（默认）', 'www.wenku8.net'),
                     for (final source in store.sources.where((source) => source.supportsReading))
                       option(source.id, source.name, source.baseUrl),
                   ],
@@ -260,7 +260,7 @@ class BookSourceSettingsPage extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         AppText(
-                          store.homepageSource?.baseUrl ?? 'www.wenku8.cc',
+                          store.homepageSource?.baseUrl ?? 'www.wenku8.net',
                           style: TextStyle(
                             fontSize: 12,
                             color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -387,7 +387,7 @@ class BookSourceSettingsPage extends StatelessWidget {
             ],
             const SizedBox(height: 12),
             AppText(
-              '说明：选择支持阅读的登录网站时，默认同步为主页书源；你仍可在上方手动切换主页。轻之国度使用专用 API，需要有效的轻之国度 token；部分网络线路可能无法直连 lightnovel.fun，遇到 DNS 或 HTTPS 连接失败时请检查该域名的网络路由。各网站 Cookie 按域名隔离，不会与轻小说文库账号混用。其他网站仍需单独适配。',
+              '说明：选择支持阅读的登录网站时，默认同步为主页书源；你仍可在上方手动切换主页。轻之国度使用当前公开读取接口，主页、搜索和公开章节不要求账号登录；登录仅用于网站账号相关功能。部分网络线路可能无法直连 lightnovel.fun，遇到 DNS 或 HTTPS 连接失败时请检查该域名的网络路由。各网站 Cookie 按域名隔离，不会与轻小说文库账号混用。其他网站仍需单独适配。',
               style: TextStyle(
                 fontSize: 12,
                 height: 1.6,

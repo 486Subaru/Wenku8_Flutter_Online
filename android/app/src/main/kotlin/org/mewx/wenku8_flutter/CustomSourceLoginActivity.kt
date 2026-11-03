@@ -172,7 +172,11 @@ class CustomSourceLoginActivity : Activity() {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
                     if (pageError != null) return
-                    status.text = if (hasSourceCookie(url)) {
+                    val isLightNovel = base.host.equals("www.lightnovel.fun", ignoreCase = true) ||
+                        base.host.equals("lightnovel.fun", ignoreCase = true)
+                    status.text = if (isLightNovel) {
+                        "轻之国度公开书籍无需登录即可用于主页和搜索；网站账号登录仅用于账号相关功能。"
+                    } else if (hasSourceCookie(url)) {
                         "已检测到此网站的登录凭据。确认登录成功后，点击右上角“完成登录”。"
                     } else {
                         "请在下方网站页面登录；账号与主站分开保存。"
@@ -218,6 +222,40 @@ class CustomSourceLoginActivity : Activity() {
 
     private fun completeLogin() {
         CookieManager.getInstance().flush()
+        val isLightNovel = base.host.equals("www.lightnovel.fun", ignoreCase = true) ||
+            base.host.equals("lightnovel.fun", ignoreCase = true)
+        if (isLightNovel) {
+            // Current lightnovel.fun stores security_key in localStorage. Read
+            // only enough to verify that the user really completed website login;
+            // the value is never passed to Dart and public reading does not need it.
+            val script = """
+                (function() {
+                  try {
+                    var re = /[a-f0-9]{16,}:\d+:\d+/i;
+                    for (var i = 0; i < localStorage.length; i++) {
+                      var v = localStorage.getItem(localStorage.key(i)) || '';
+                      var m = v.match(re);
+                      if (m) return m[0];
+                    }
+                  } catch (e) {}
+                  return '';
+                })()
+            """.trimIndent()
+            browser.evaluateJavascript(script) { value ->
+                val found = !value.isNullOrBlank() && value != "null" && value != "\"\""
+                if (!found) {
+                    Toast.makeText(
+                        this,
+                        "未检测到网站账号登录状态；公开书籍无需登录即可用于主页和搜索",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                    return@evaluateJavascript
+                }
+                setResult(RESULT_OK)
+                finish()
+            }
+            return
+        }
         if (!hasSourceCookie(browser.url)) {
             Toast.makeText(this, "尚未检测到此网站的登录凭据；请先完成登录", Toast.LENGTH_SHORT).show()
             return

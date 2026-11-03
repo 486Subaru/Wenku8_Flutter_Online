@@ -12,6 +12,7 @@ import 'app_window_insets.dart';
 import 'app_licenses.dart';
 import 'app_repository.dart';
 import 'book_sources.dart';
+import 'built_in_source_upgrades.dart';
 import 'catalog.dart';
 import 'legacy_wenku_repository.dart';
 import 'library_state.dart';
@@ -88,6 +89,11 @@ Future<void> main() async {
     await bookSources.load();
   } catch (_) {
     // A damaged optional source list must never prevent opening the library.
+  }
+  try {
+    await upgradeBuiltInSourceCompatibility(bookSources);
+  } catch (_) {
+    // A built-in compatibility migration must never prevent app startup.
   }
   BookSourceStore.instance = bookSources;
   final remote = LegacyWenkuRepository(bookSources: bookSources);

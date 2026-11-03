@@ -42,11 +42,16 @@ jobs:
       - name: Build ARM64 release APK
         run: flutter build apk --release --target-platform android-arm64 --split-per-abi
 
+      - name: Prepare Riqing release asset
+        run: |
+          mkdir -p build/release
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk build/release/riqing-0.5.5-arm64-v8a.apk
+
       - name: Upload ARM64 APK
         uses: actions/upload-artifact@v4
         with:
-          name: riqing-0.5.5-arm64-v2285
-          path: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          name: riqing-0.5.5-arm64-v2286
+          path: build/release/riqing-0.5.5-arm64-v8a.apk
           if-no-files-found: error
           retention-days: 14
 

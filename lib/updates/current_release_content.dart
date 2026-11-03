@@ -32,11 +32,13 @@ const _network =
     '网络结构重新整理：统一处理官方域名与 HTTPS 请求边界，按书源管理允许的请求／登录主机，并继续隔离不同站点的会话。这里不是简单“关闭安全限制”，而是改成“允许正确的官方站点正常工作，同时继续阻止无关地址”，减少以后网站正常迁移时反复出现相同故障。';
 const _stability =
     '稳定性与维护：保留旧书源配置迁移逻辑，让升级后的用户尽量不丢失已经保存的来源和登录选择；同时把 v2284 构建期临时补丁正式落入真实源码，v2285 起常规构建不再每次重新打同一批补丁。这样以后新增或修复书源时，可以直接在统一结构上维护，减少重复代码和补丁叠补丁。';
+const _updateChannel =
+    'v2286 修复应用内更新通道：日轻不再检查原版 mikufoxxx/Wenku8_Flutter 的 Release，也不再使用原版更新镜像；更新只认 486Subaru/Wenku8_Flutter_Online 自己的 GitHub Release。仓库或 Release 尚未公开时，匿名更新检查会表现为暂无可用更新，而不会再弹出原版更新提示。';
 const _build =
-    '应用名称改为「日轻」，当前版本为 0.5.5 · 联网增强版 v2285。Android 使用独立 applicationId，与原版安装互不覆盖；本次构建面向 ARM64 Android 设备。';
+    '应用名称为「日轻」，当前版本为 0.5.5 · 联网增强版 v2286。Android 使用独立 applicationId，与原版安装互不覆盖；本次构建面向 ARM64 Android 设备。';
 
 const publicReleaseNotes = '''
-# 日轻 0.5.5 联网增强版 · v2285
+# 日轻 0.5.5 联网增强版 · v2286
 
 $releaseFreeNotice
 
@@ -74,6 +76,9 @@ $_network
 ## 稳定性与后续维护
 $_stability
 
+## v2286 · 更新通道修复
+$_updateChannel
+
 ## 应用与构建
 $_build
 
@@ -95,11 +100,12 @@ const currentReleaseSummary = [
   _bilinovel,
   _network,
   _stability,
+  _updateChannel,
   _build,
 ];
 
 const currentReleaseSections = [
-  ReleaseSection('日轻 v2285 · 为什么这样改', [
+  ReleaseSection('日轻 v2286 · 为什么这样改', [
     releaseFreeNotice,
     releaseReadingNotice,
     currentReleaseSourcePolicy,
@@ -110,6 +116,7 @@ const currentReleaseSections = [
   ReleaseSection('网络、稳定性与构建', [
     _network,
     _stability,
+    _updateChannel,
     _build,
     releaseMaintenanceNotice,
   ]),

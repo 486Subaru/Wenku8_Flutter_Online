@@ -1,8 +1,12 @@
-Wenku8 Flutter
+Riqing (日轻)
 
-The repository's existing LICENSE and assets/licenses/GPL-3.0.txt apply to
-published source files. Third-party components retain their own copyrights
-and license conditions.
+This repository is an unofficial derivative of the Wenku8 project by MewX.
+Upstream: mikufoxxx/Wenku8
+Derivative repository: 486Subaru/Wenku8_Flutter_Online
+
+The project source is distributed under GNU GPL version 2 as provided in
+LICENSE. This notice does not replace or weaken any upstream attribution,
+third-party copyright notice, or third-party license condition.
 
 Implementation changes, September-October 2026:
 New Flutter presentation, reader, local library/cache, Android bridges and

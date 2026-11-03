@@ -12,14 +12,11 @@ import '../legacy_transport.dart';
 export 'current_release_content.dart'
     show currentReleaseNotes, publicReleaseNotes;
 
-const officialUpdateRepository = 'mikufoxxx/Wenku8_Flutter';
+const officialUpdateRepository = '486Subaru/Wenku8_Flutter_Online';
 const updateMirrorOrigin = 'https://git.3952039.xyz';
-const updateRepository = String.fromEnvironment(
-  'UPDATE_REPOSITORY',
-  defaultValue: officialUpdateRepository,
-);
+const updateRepository = officialUpdateRepository;
 const currentAppVersion = '0.5.5';
-const currentAppBuild = 2285;
+const currentAppBuild = 2286;
 
 class ReleaseVersion implements Comparable<ReleaseVersion> {
   const ReleaseVersion(this.major, this.minor, this.patch, [this.build = 0]);
@@ -116,7 +113,7 @@ class AppRelease {
       final url = Uri.tryParse(raw['browser_download_url']?.toString() ?? '');
       final size = raw['size'];
       if (name is! String ||
-          !name.startsWith('wenku8-${version.name}-') ||
+          !name.startsWith('riqing-${version.name}-') ||
           !const ['.apk', '.ipa', '.hap'].any(name.endsWith) ||
           url == null ||
           url.scheme != 'https' ||
@@ -368,7 +365,7 @@ class GithubUpdateSource implements UpdateSource {
         HttpHeaders.acceptHeader,
         'application/vnd.github+json',
       );
-      request.headers.set(HttpHeaders.userAgentHeader, 'Wenku8-Flutter');
+      request.headers.set(HttpHeaders.userAgentHeader, 'Riqing-Android');
       request.headers.set('X-GitHub-Api-Version', '2022-11-28');
       request.headers.set(HttpHeaders.cacheControlHeader, 'no-cache');
       final response = await request.close().timeout(
@@ -627,7 +624,7 @@ class AppUpdates extends ChangeNotifier {
     mirror: _mirrorSource,
     original: _githubSource,
   );
-  bool get _usesMirror => updateRepository == officialUpdateRepository;
+  bool get _usesMirror => false;
   Uri get projectPage => _usesMirror
       ? Uri.parse(updateMirrorOrigin)
       : Uri.https('github.com', '/$updateRepository');

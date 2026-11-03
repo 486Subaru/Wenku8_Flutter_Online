@@ -42,13 +42,10 @@ jobs:
       - name: Build ARM64 release APK
         run: flutter build apk --release --target-platform android-arm64 --split-per-abi
 
-      # Only run this application's native tests. Running the aggregate
-      # testDebugUnitTest task also executes unit tests bundled by Android
-      # dependencies (for example url_launcher_android/Robolectric), which can
-      # fail because of the CI SDK/JDK matrix even when this app is healthy.
-      - name: Run app Android native unit tests
-        run: cd android && ./gradlew :app:testDebugUnitTest --no-daemon
-
+      # Persist the installable package immediately. Hosted runners can be
+      # reclaimed independently of this workflow after a long Android build;
+      # a successful APK should not be lost because a later verification step
+      # is interrupted by runner infrastructure.
       - name: Upload ARM64 APK
         uses: actions/upload-artifact@v4
         with:
@@ -56,3 +53,10 @@ jobs:
           path: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
           if-no-files-found: error
           retention-days: 14
+
+      # Only run this application's native tests. Running the aggregate
+      # testDebugUnitTest task also executes unit tests bundled by Android
+      # dependencies (for example url_launcher_android/Robolectric), which can
+      # fail because of the CI SDK/JDK matrix even when this app is healthy.
+      - name: Run app Android native unit tests
+        run: cd android && ./gradlew :app:testDebugUnitTest --no-daemon

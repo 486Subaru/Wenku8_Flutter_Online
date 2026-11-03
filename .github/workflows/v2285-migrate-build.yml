@@ -1,5 +1,5 @@
-name: One-time v2285 source migration and APK build
-# retry revision: patched v2284 -> v2285
+name: One-time v2285 source migration finalizer
+# source-only retry after verified v2285 APK build
 
 on:
   push:
@@ -10,9 +10,9 @@ permissions:
   contents: write
 
 jobs:
-  migrate-build:
+  migrate-source:
     runs-on: ubuntu-latest
-    timeout-minutes: 55
+    timeout-minutes: 10
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -20,55 +20,17 @@ jobs:
           ref: riqing-custom-sources
           fetch-depth: 0
 
-      - name: Land v2284 compatibility patches into real source
+      - name: Land verified v2284 patches and v2285 metadata
         run: |
           python3 tool/apply_v2284_patch.py
           python3 tool/apply_v2284_postpatch.py
-
-      - name: Finalize v2285 source and metadata
-        run: |
           python3 tool/v2285_migrate.py
           git diff --check
 
-      - name: Set up Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
-
-      - name: Resolve dependencies
-        run: flutter pub get
-
-      - name: Analyze Dart source
-        run: flutter analyze --no-fatal-infos
-
-      - name: Run Flutter tests
-        run: flutter test
-
-      - name: Build ARM64 release APK
-        run: flutter build apk --release --target-platform android-arm64 --split-per-abi
-
-      - name: Run Android native unit tests
-        run: cd android && ./gradlew :app:testDebugUnitTest --no-daemon
-
-      - name: Upload v2285 ARM64 APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: riqing-0.5.5-arm64-v2285
-          path: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Commit permanent v2285 source
+      - name: Commit permanent v2285 application source
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
-          git commit -m 'Land v2285 network source and 日轻 release announcement'
+          git commit -m 'Land verified v2285 application source'
           git push origin HEAD:riqing-custom-sources

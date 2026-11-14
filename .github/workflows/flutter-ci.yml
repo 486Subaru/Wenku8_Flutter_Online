@@ -44,6 +44,9 @@ jobs:
       - name: Build ARM64 release APK
         run: flutter build apk --release --target-platform android-arm64 --split-per-abi
 
+      - name: Run app Android native unit tests
+        run: cd android && ./gradlew :app:testDebugUnitTest --no-daemon
+
       - name: Prepare Riqing release asset
         run: |
           mkdir -p build/release
@@ -57,5 +60,3 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Run app Android native unit tests
-        run: cd android && ./gradlew :app:testDebugUnitTest --no-daemon

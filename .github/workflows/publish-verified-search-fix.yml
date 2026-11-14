@@ -1,0 +1,62 @@
+name: Publish verified Riqing search fix prerelease
+
+on:
+  push:
+    branches: ['publish/riqing-2286-search-fix']
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: publish-riqing-2286-search-fix
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: 486Subaru/Wenku8_Flutter_Online
+      TAG: riqing-v0.5.5-2286-search-fix
+      BUILD_SHA: 66aedc198f9465f0fc617e2d5ab6517387749d2a
+      RUN_ID: '43561995986'
+      APK_SHA: d11677c9e84b0b11c505cd47f9f2154e95cc164aebc8edad3c378dd69a3c86a5
+    steps:
+      - name: Verify successful build and download exact artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/$GH_REPO/actions/runs/$RUN_ID" --jq .head_sha)" = "$BUILD_SHA"
+          test "$(gh api "repos/$GH_REPO/actions/runs/$RUN_ID" --jq .conclusion)" = success
+          mkdir -p release
+          gh run download "$RUN_ID" --repo "$GH_REPO" --name riqing-0.5.5-arm64-v2286 --dir release
+          test -f release/riqing-0.5.5-arm64-v8a.apk
+          printf '%s  %s\n' "$APK_SHA" release/riqing-0.5.5-arm64-v8a.apk | sha256sum --check
+          unzip -tq release/riqing-0.5.5-arm64-v8a.apk
+
+      - name: Publish separate prerelease without replacing stable
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > release-notes.md <<'NOTES'
+          ## 日轻 0.5.5（2286）联网与搜索联合修复测试版
+
+          本版本取自已通过全部 CI 检查的 ARM64 构建 43561995986，对应源码提交 66aedc198f9465f0fc617e2d5ab6517387749d2a。
+
+          - 优化轻小说文库登录会话、发现页和浏览器访问回退。
+          - 修复搜索结果解析、单本结果跳转及搜索间隔限制。
+          - 恢复多书源配置入口，分离主页书源与参与搜索的网站。
+          - 保留书源启用状态，隔离单个书源的搜索故障。
+          - Dart 检查、Flutter 测试、Android 原生单元测试和 ARM64 编译均通过。
+
+          **测试版说明：** 尚未完成真实设备与官网联网验收；账号资料、云书架、云端收藏、推荐、书评及每日签到仍未完整恢复。此发布不替换旧正式版本，也不触发正式版的应用内自动更新。若安装提示签名不一致，请勿卸载旧版或清除数据。
+
+          APK SHA-256: d11677c9e84b0b11c505cd47f9f2154e95cc164aebc8edad3c378dd69a3c86a5
+          NOTES
+          if gh release view "$TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
+            echo "Release already exists; refusing to overwrite." >&2
+            exit 1
+          fi
+          gh release create "$TAG" release/riqing-0.5.5-arm64-v8a.apk --repo "$GH_REPO" --target "$BUILD_SHA" --title "日轻 0.5.5（2286）联网与搜索联合修复测试版" --notes-file release-notes.md --prerelease --latest=false

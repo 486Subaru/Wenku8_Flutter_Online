@@ -268,6 +268,13 @@ class LegacyWenkuRepository extends NovelRepository
       );
     }
     final customPages = await customFuture;
+    // Preserve usable optional-source results, but never disguise a failed
+    // official search as a genuine zero-result response.
+    if (primary.items.isEmpty &&
+        primary.searchFailures.isNotEmpty &&
+        customPages.every((result) => result.items.isEmpty)) {
+      throw primary.searchFailures.values.first;
+    }
     final merged = <int, Novel>{
       for (final book in primary.items) book.id: book,
       for (final result in customPages)
@@ -395,7 +402,7 @@ class LegacyWenkuRepository extends NovelRepository
 
   Future<NovelPage> _searchPage(String query, String field, int page) async {
     final source = await _searchRequest(query, field: field, page: page);
-    return Wenku8HtmlParser.parseBookPage(source, page);
+    return Wenku8HtmlParser.parseSearchPage(source, page);
   }
 
   @override

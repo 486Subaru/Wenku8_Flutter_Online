@@ -156,8 +156,9 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
                     return result.error("WEB_BAD_SEARCH", "搜索条件无效", null)
                 }
                 val encoded = URLEncoder.encode(query, "GBK")
+                // The official form omits the page parameter on its initial request.
                 val url = BASE + "/modules/article/search.php?searchtype=" + field +
-                    "&searchkey=" + encoded + "&page=" + page
+                    "&searchkey=" + encoded + (if (page > 1) "&page=" + page else "")
                 dispatch(result) { requestOfficialText(url, BASE + "/index.php") }
             }
             "hasSession" -> result.success(Wenku8SessionCookies.hasSession())

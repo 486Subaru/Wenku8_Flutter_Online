@@ -61,6 +61,36 @@ void main() {
       );
     });
 
+    test('search accepts a normal results list', () {
+      const html = '<div id="content"><a href="/book/4265.htm">测试小说</a></div>';
+      final result = Wenku8HtmlParser.parseSearchPage(html, 1);
+      expect(result.items.single.id, 4265);
+    });
+
+    test('search handles a single-result detail page', () {
+      const html = '''
+        <html><head><title>测试小说 - 轻小说文库</title></head>
+        <body><div id="content"><h1>测试小说</h1><table>
+          <tr><td>小说作者</td><td>作者乙</td></tr>
+          <tr><td>文章状态</td><td>连载中</td></tr>
+        </table><a href="/novel/4/4265/index.htm">小说目录</a></div></body></html>
+      ''';
+      final result = Wenku8HtmlParser.parseSearchPage(html, 1);
+      expect(result.items.single.id, 4265);
+      expect(result.items.single.author, '作者乙');
+    });
+
+    test('search recognizes explicit zero results', () {
+      const html = '<div id="content">没有找到相关小说</div>';
+      expect(Wenku8HtmlParser.parseSearchPage(html, 1).items, isEmpty);
+    });
+
+    test('search does not treat unexpected HTML as zero results', () {
+      const html = '<html><body>服务暂时不可用</body></html>';
+      expect(() => Wenku8HtmlParser.parseSearchPage(html, 1),
+          throwsFormatException);
+    });
+
     test('parses detail metadata and chapter directory prefix', () {
       const html = '''
         <html>

@@ -69,6 +69,7 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
     private var pendingLogin: MethodChannel.Result? = null
     private var pendingSourceLogin: MethodChannel.Result? = null
     private var lastRequestAt = 0L
+    private var lastSearchAt = 0L
     private lateinit var appContext: Context
     private var preferBrowser = false
     private var userAgent = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
@@ -159,7 +160,50 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
                 // The official form omits the page parameter on its initial request.
                 val url = BASE + "/modules/article/search.php?searchtype=" + field +
                     "&searchkey=" + encoded + (if (page > 1) "&page=" + page else "")
-                dispatch(result) { requestOfficialText(url, BASE + "/index.php") }
+                dispatch(result) {
+                    val delay = 5100L - (SystemClock.elapsedRealtime() - lastSearchAt)
+                    if (lastSearchAt != 0L && delay > 0) Thread.sleep(delay)
+                    lastSearchAt = SystemClock.elapsedRealtime()
+                    requestOfficialText(url, BASE + "/index.php")
+                }
+            }
+            "officialAction" -> {
+                val rawUrl = call.argument<String>("url")
+                    ?: return result.error("WEB_BAD_URL", "缺少操作地址", null)
+                val content = call.argument<String>("content")
+                val url = Wenku8SessionCookies.routeOfficialPage(rawUrl)
+                val path = runCatching { URL(url).path }.getOrNull()
+                val allowedPaths = if (content == null) {
+                    setOf("/modules/article/addbookcase.php", "/modules/article/bookcase.php", "/modules/article/uservote.php")
+                } else {
+                    setOf("/modules/article/reviews.php", "/modules/article/reviewshow.php")
+                }
+                if (!Wenku8UrlPolicy.isOfficialPage(url) || path !in allowedPaths ||
+                    (content != null && (content.isBlank() || content.length > 12000))) {
+                    return result.error("WEB_BAD_ACTION", "官网操作地址或正文无效", null)
+                }
+                dispatch(result) {
+                    if (!Wenku8SessionCookies.hasSession()) {
+                        throw WebFailure("WEB_LOGIN_REQUIRED", "请先登录轻小说文库账号")
+                    }
+                    val body = content?.let {
+                        if (!Charset.forName("GBK").newEncoder().canEncode(it)) {
+                            throw WebFailure("WEB_BAD_BODY", "官网使用 GBK 编码，正文包含不支持的字符")
+                        }
+                        ("pcontent=" + URLEncoder.encode(it, "GBK")).toByteArray(Charsets.US_ASCII)
+                    }
+                    waitForRequestSlot()
+                    // Never replay a potentially non-idempotent write.
+                    val reply = try {
+                        Wenku8BrowserPage.read(appContext, url, BASE + "/index.php", MAX_TEXT_BYTES, body)
+                    } catch (failure: Wenku8BrowserPage.Failure) {
+                        throw WebFailure(failure.code, failure.message ?: "官网操作结果未确认")
+                    }
+                    if (looksLikeLoginPage(reply.html, URL(reply.url))) {
+                        throw WebFailure("WEB_LOGIN_REQUIRED", "请先登录轻小说文库账号")
+                    }
+                    reply.html
+                }
             }
             "hasSession" -> result.success(Wenku8SessionCookies.hasSession())
             "openLogin" -> openLogin(result)

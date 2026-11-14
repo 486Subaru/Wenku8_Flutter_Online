@@ -249,11 +249,7 @@ class LegacyWenkuRepository extends NovelRepository
       ...primary.searchFailures,
       for (final result in customPages) ...result.searchFailures,
     };
-    if (primary.items.isEmpty &&
-        failures.isNotEmpty &&
-        customPages.every((result) => result.items.isEmpty)) {
-      throw failures.values.first;
-    }
+    // Incomplete search scope stays visible even if no site returned a result.
     final merged = <int, Novel>{
       for (final book in primary.items) book.id: book,
       for (final result in customPages)

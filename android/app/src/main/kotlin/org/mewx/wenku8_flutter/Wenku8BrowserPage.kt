@@ -26,7 +26,7 @@ internal object Wenku8BrowserPage {
     data class Page(val html: String, val url: String)
     class Failure(val code: String, message: String) : Exception(message)
 
-    fun read(context: Context, url: String, referer: String?, maxBytes: Int): Page {
+    fun read(context: Context, url: String, referer: String?, maxBytes: Int, form: ByteArray? = null): Page {
         check(Looper.myLooper() != Looper.getMainLooper())
         if (!Wenku8UrlPolicy.isOfficialPage(url)) {
             throw Failure("WEB_BAD_URL", "网页地址不在允许访问的文库域名内")
@@ -135,7 +135,8 @@ internal object Wenku8BrowserPage {
                 val headers = if (referer != null && Wenku8UrlPolicy.isOfficialPage(referer)) {
                     mapOf("Referer" to referer)
                 } else emptyMap()
-                view.loadUrl(url, headers)
+                if (form == null) view.loadUrl(url, headers)
+                else view.postUrl(url, form)
             } catch (_: Exception) {
                 finish(failure = Failure("WEB_BROWSER_UNAVAILABLE", "无法启动官网浏览器，请检查 Android System WebView"))
             }

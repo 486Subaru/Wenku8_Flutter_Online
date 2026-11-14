@@ -158,6 +158,24 @@ abstract final class LegacyTransport {
     }
   }
 
+  /// Explicit user-requested writes; the native transport never replays them.
+  static Future<String> officialAction(String url, {String? content}) async {
+    try {
+      final result = await channel.invokeMethod<String>('officialAction', {
+        'url': url,
+        if (content != null) 'content': content,
+      });
+      if (result == null || result.trim().isEmpty) {
+        throw const FormatException('官网操作结果未确认，请先刷新核对，不要重复提交');
+      }
+      return result;
+    } on MissingPluginException {
+      throw const OnlineComponentUnavailable();
+    } on PlatformException catch (failure) {
+      _throwPlatform(failure);
+    }
+  }
+
   static Future<Uint8List> getBytes(String url, {String? referer}) async {
     try {
       final value = await channel.invokeMethod<Uint8List>('getBytes', {

@@ -1,5 +1,7 @@
 package org.mewx.wenku8_flutter
 
+import android.content.Context
+import android.content.SharedPreferences
 import android.os.Handler
 import android.os.Looper
 import android.webkit.CookieManager
@@ -10,12 +12,49 @@ import java.util.concurrent.atomic.AtomicReference
 /** Cookies stay inside Android WebView storage; they are never exposed to Dart. */
 internal object Wenku8SessionCookies {
     private const val ORIGIN = "https://www.wenku8.net/"
+    private val origins = listOf(ORIGIN, "https://wenku8.net/", "https://www.wenku8.cc/", "https://wenku8.cc/")
     private val main = Handler(Looper.getMainLooper())
+    private var preferences: SharedPreferences? = null
 
-    fun hasSession(): Boolean {
-        val values = parse(cookieHeader(ORIGIN).orEmpty())
+    fun initialize(context: Context) {
+        preferences = context.applicationContext.getSharedPreferences("wenku8_official_session", Context.MODE_PRIVATE)
+    }
+
+    private fun originOf(url: String?): String? {
+        if (url == null || !Wenku8UrlPolicy.isOfficialPage(url)) return null
+        val host = runCatching { java.net.URI(url).host?.lowercase() }.getOrNull()
+        return origins.firstOrNull { it == "https://$host/" }
+    }
+
+    private fun hasSessionAt(origin: String): Boolean {
+        val values = parse(cookieHeader(origin).orEmpty())
         return !values["PHPSESSID"].isNullOrBlank() &&
             !values["jieqiUserInfo"].isNullOrBlank()
+    }
+
+    fun activeOrigin(): String {
+        val saved = preferences?.getString("last_verified_origin", null)
+        if (saved in origins && saved != null && hasSessionAt(saved)) return saved
+        return origins.firstOrNull(::hasSessionAt) ?: ORIGIN
+    }
+
+    fun hasSession(): Boolean = origins.any(::hasSessionAt)
+
+    /** Record the actual official origin on which the user completed login. */
+    fun rememberLoginOrigin(url: String?): Boolean {
+        val origin = originOf(url) ?: return false
+        if (!hasSessionAt(origin)) return false
+        preferences?.edit()?.putString("last_verified_origin", origin)?.apply()
+        return true
+    }
+
+    fun routeOfficialPage(raw: String): String {
+        if (!Wenku8UrlPolicy.isOfficialPage(raw)) return raw
+        val uri = java.net.URI(raw)
+        val origin = activeOrigin().trimEnd('/')
+        return origin + uri.rawPath +
+            (uri.rawQuery?.let { "?$it" } ?: "") +
+            (uri.rawFragment?.let { "#$it" } ?: "")
     }
 
     fun cookieHeader(url: String): String? {
@@ -69,16 +108,20 @@ internal object Wenku8SessionCookies {
 
     /** Remove only Wenku8 cookies, leaving cookies for every other site intact. */
     fun clear() {
-        val names = parse(cookieHeader(ORIGIN).orEmpty()).keys
-        val deletions = mutableListOf<String>()
-        for (name in names) {
-            deletions.add(name + "=; Max-Age=0; Path=/")
-            deletions.add(name + "=; Max-Age=0; Path=/; Domain=www.wenku8.net")
-            deletions.add(name + "=; Max-Age=0; Path=/; Domain=wenku8.net")
-            deletions.add(name + "=; Max-Age=0; Path=/; Domain=www.wenku8.cc")
-            deletions.add(name + "=; Max-Age=0; Path=/; Domain=wenku8.cc")
+        for (origin in origins) {
+            val names = parse(cookieHeader(origin).orEmpty()).keys
+            val host = java.net.URI(origin).host
+            val domain = host.removePrefix("www.")
+            val deletions = names.flatMap { name ->
+                listOf(
+                    "$name=; Max-Age=0; Path=/",
+                    "$name=; Max-Age=0; Path=/; Domain=$host",
+                    "$name=; Max-Age=0; Path=/; Domain=$domain",
+                )
+            }
+            if (deletions.isNotEmpty()) setCookies(origin, deletions)
         }
-        if (deletions.isNotEmpty()) setCookies(ORIGIN, deletions)
+        preferences?.edit()?.remove("last_verified_origin")?.apply()
         flush()
     }
 

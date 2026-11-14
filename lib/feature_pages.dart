@@ -266,7 +266,7 @@ class _WenkuAccountPageState extends State<WenkuAccountPage> {
                 child: ListView(
                   shrinkWrap: true,
                   children: [
-                    option(official, '轻小说文库（默认）', 'www.wenku8.cc'),
+                    option(official, '轻小说文库（默认）', 'www.wenku8.net'),
                     for (final source in store.loginOptions)
                       option(
                         source.id,

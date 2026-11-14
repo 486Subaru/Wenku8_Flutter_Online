@@ -69,10 +69,14 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
     private var pendingLogin: MethodChannel.Result? = null
     private var pendingSourceLogin: MethodChannel.Result? = null
     private var lastRequestAt = 0L
+    private lateinit var appContext: Context
+    private var preferBrowser = false
     private var userAgent = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         val context = binding.applicationContext
+        appContext = context
+        Wenku8SessionCookies.initialize(context)
         userAgent = runCatching { WebSettings.getDefaultUserAgent(context) }.getOrDefault(userAgent)
         channel = MethodChannel(binding.binaryMessenger, CHANNEL).also {
             it.setMethodCallHandler(this)
@@ -84,7 +88,7 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
             "getText" -> {
                 val url = call.argument<String>("url") ?: return result.error("WEB_BAD_URL", "缺少网页地址", null)
                 val referer = call.argument<String>("referer")
-                dispatch(result) { request(url, referer, MAX_TEXT_BYTES, image = false).let { decode(it.bytes, it.contentType) } }
+                dispatch(result) { requestOfficialText(url, referer) }
             }
             "getBytes" -> {
                 val url = call.argument<String>("url") ?: return result.error("WEB_BAD_URL", "缺少图片地址", null)
@@ -154,7 +158,7 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
                 val encoded = URLEncoder.encode(query, "GBK")
                 val url = BASE + "/modules/article/search.php?searchtype=" + field +
                     "&searchkey=" + encoded + "&page=" + page
-                dispatch(result) { decode(request(url, BASE + "/index.php", MAX_TEXT_BYTES, image = false).bytes, "text/html; charset=GB18030") }
+                dispatch(result) { requestOfficialText(url, BASE + "/index.php") }
             }
             "hasSession" -> result.success(Wenku8SessionCookies.hasSession())
             "openLogin" -> openLogin(result)
@@ -278,6 +282,38 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
         return synchronized(sourceHostStates) {
             sourceHostStates[key] ?: SourceHostState().also { sourceHostStates[key] = it }
         }
+    }
+
+    /**
+     * Use the site's ordinary browser path when its HTML endpoint rejects the
+     * native client. Never solve challenges automatically or share cookies across domains.
+     * Once the browser path is needed, keep using it for this app session.
+     */
+    private fun requestOfficialText(rawUrl: String, referer: String?): String {
+        val url = Wenku8SessionCookies.routeOfficialPage(rawUrl)
+        val routedReferer = referer?.let(Wenku8SessionCookies::routeOfficialPage)
+        if (!Wenku8UrlPolicy.isOfficialPage(url)) {
+            throw WebFailure("WEB_BAD_URL", "网页地址不在允许访问的文库域名内")
+        }
+        if (!preferBrowser) {
+            try {
+                val reply = request(url, routedReferer, MAX_TEXT_BYTES, image = false)
+                return decode(reply.bytes, reply.contentType)
+            } catch (failure: WebFailure) {
+                if (failure.code !in setOf("WEB_CHALLENGE", "WEB_BLOCKED")) throw failure
+                preferBrowser = true
+            }
+        }
+        waitForRequestSlot()
+        val reply = try {
+            Wenku8BrowserPage.read(appContext, url, routedReferer, MAX_TEXT_BYTES)
+        } catch (failure: Wenku8BrowserPage.Failure) {
+            throw WebFailure(failure.code, failure.message ?: "官网浏览器请求失败")
+        }
+        if (looksLikeLoginPage(reply.html, URL(reply.url))) {
+            throw WebFailure("WEB_LOGIN_REQUIRED", "请先登录轻小说文库账号")
+        }
+        return reply.html
     }
 
     private fun request(rawUrl: String, referer: String?, maxBytes: Int, image: Boolean): Reply {

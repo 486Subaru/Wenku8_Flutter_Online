@@ -24,6 +24,7 @@ class Wenku8LoginActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Wenku8SessionCookies.initialize(applicationContext)
         CookieManager.getInstance().setAcceptCookie(true)
 
         val root = LinearLayout(this).apply {
@@ -167,13 +168,13 @@ class Wenku8LoginActivity : Activity() {
             1f,
         ))
         setContentView(root)
-        browser.loadUrl("https://www.wenku8.net/index.php")
+        browser.loadUrl(Wenku8SessionCookies.activeOrigin() + "index.php")
     }
 
     private fun completeLogin() {
         CookieManager.getInstance().flush()
-        if (!Wenku8SessionCookies.hasSession()) {
-            Toast.makeText(this, "尚未检测到有效的文库登录状态", Toast.LENGTH_SHORT).show()
+        if (!Wenku8SessionCookies.rememberLoginOrigin(browser.url)) {
+            Toast.makeText(this, "当前官网域名尚未检测到有效登录状态，请在此网页完成登录", Toast.LENGTH_SHORT).show()
             return
         }
         setResult(RESULT_OK)

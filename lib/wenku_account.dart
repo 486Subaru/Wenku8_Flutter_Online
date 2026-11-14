@@ -4,6 +4,7 @@ import 'legacy_transport.dart';
 import 'library_state.dart';
 import 'online_component.dart';
 import 'wenku_shelf_sync.dart' show CloudShelfPlan;
+import 'wenku8_html_parser.dart';
 
 class WenkuProfile {
   const WenkuProfile({
@@ -108,6 +109,32 @@ class WenkuAccount extends ChangeNotifier {
       _publicationRevision++;
     } catch (failure) {
       error = describeError(failure);
+      rethrow;
+    } finally {
+      busy = false;
+      operation = null;
+      notifyListeners();
+    }
+  }
+
+  /// Check the same official endpoint as the recent-updates discovery page.
+  /// Preserve a valid account session if the site rejects the list request.
+  Future<void> verifyDiscoveryAccess() async {
+    if (busy) return;
+    busy = true;
+    operation = '正在检查官网书籍列表';
+    error = null;
+    notifyListeners();
+    try {
+      final html = await LegacyTransport.getText(
+        '${Wenku8HtmlParser.base}modules/article/toplist.php?sort=lastupdate&page=1',
+        referer: '${Wenku8HtmlParser.base}index.php',
+      );
+      if (Wenku8HtmlParser.parseBookList(html).isEmpty) {
+        throw const FormatException('已登录，但官网未返回可识别的书籍列表；请重试');
+      }
+    } catch (failure) {
+      error = '已保存网页登录状态，但发现页尚未连接：${describeError(failure)}';
       rethrow;
     } finally {
       busy = false;

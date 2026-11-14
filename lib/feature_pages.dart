@@ -319,7 +319,8 @@ class _WenkuAccountPageState extends State<WenkuAccountPage> {
       await _run(() async {
         await widget.account.login('', '');
         await store?.completeOfficialLogin();
-      }, '已完成文库官网登录');
+        await widget.account.verifyDiscoveryAccess();
+      }, '已完成文库官网登录，官网书籍列表连接正常');
       return;
     }
     if (_sourceLoginBusy || widget.account.busy) return;

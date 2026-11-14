@@ -340,17 +340,23 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
                 }
                 val contentType = connection.contentType
 
+                val body = if (image) "" else decode(raw, contentType)
+                val challenge = !image && Wenku8ChallengePolicy.isChallenge(
+                    body, connection.getHeaderField("cf-mitigated"),
+                )
+                if (challenge) {
+                    throw WebFailure("WEB_CHALLENGE", "官网仍要求浏览器验证；请在官网完成验证后重试")
+                }
+                if (status == 401) {
+                    throw WebFailure("WEB_LOGIN_REQUIRED", "请先登录轻小说文库账号")
+                }
                 if (status == 403) {
-                    val body = if (image) "" else decode(raw, contentType)
-                    if (isChallenge(body)) throw WebFailure("WEB_CHALLENGE", "官网要求浏览器验证，请先完成官方网页登录验证")
-                    throw WebFailure("WEB_BLOCKED", "官网暂时拒绝了请求，请稍后重试")
+                    throw WebFailure("WEB_BLOCKED", "官网拒绝了应用的网络请求，请检查网络或稍后重试")
                 }
                 if (status == 429) throw WebFailure("WEB_RATE_LIMITED", "请求过于频繁，请稍后重试")
                 if (status !in 200..299) throw WebFailure("WEB_HTTP_ERROR", "官网返回 HTTP " + status)
 
                 if (!image) {
-                    val body = decode(raw, contentType)
-                    if (isChallenge(body)) throw WebFailure("WEB_CHALLENGE", "官网要求浏览器验证，请先完成官方网页登录验证")
                     if (looksLikeLoginPage(body, current)) {
                         throw WebFailure("WEB_LOGIN_REQUIRED", "请先登录轻小说文库账号")
                     }

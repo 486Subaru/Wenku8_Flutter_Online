@@ -1116,8 +1116,8 @@ class DiscoverPage extends StatelessWidget {
           failure is OnlineChallengeRequired;
       final features = WenkuFeaturesScope.maybeOf(context);
       final loginAction = needsLogin && features != null
-          ? () => unawaited(
-              pushNovelPage<void>(
+          ? () async {
+              await pushNovelPage<void>(
                 context,
                 WenkuAccountPage(
                   account: features.account,
@@ -1125,8 +1125,9 @@ class DiscoverPage extends StatelessWidget {
                   repository: repository,
                 ),
                 reduceMotion: state.reduceMotion,
-              ),
-            )
+              );
+              if (mounted) await feed!.retry();
+            }
           : null;
       final needsSourceLogin = failure is BookSourceAuthenticationRequired;
       final sourceLoginAction = needsSourceLogin

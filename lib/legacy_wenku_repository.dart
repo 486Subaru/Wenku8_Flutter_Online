@@ -206,54 +206,29 @@ class LegacyWenkuRepository extends NovelRepository
     if (page < 1 || page > 100000) {
       throw ArgumentError.value(page, 'page');
     }
-    final selectedSource = bookSources?.homepageSource;
-    if (selectedSource != null) {
-      if (field == BookSearchField.id) {
-        final id = int.tryParse(term);
-        final book = id == null ? null : _customBooks[id];
-        return NovelPage(
-          items: book == null ? const [] : [book],
-          page: page,
-          totalPages: book == null ? 0 : 1,
-          totalItems: book == null ? 0 : 1,
-        );
-      }
-      final result = await BookSourceRepository(selectedSource).search(
-        term,
-        page: page,
-        field: field == BookSearchField.author ? 'author' : 'title',
-      );
-      for (final book in result.items) {
-        _customBooks[book.id] = book;
-      }
-      if (field == BookSearchField.all ||
-          field == BookSearchField.title ||
-          field == BookSearchField.author) {
-        return result;
-      }
-      final pattern = BookSearch(term, field: field);
-      final filtered = result.items.where((book) => pattern.matches(
-        title: book.title,
-        author: book.author,
-        tags: book.genre,
-        summary: book.summary,
-        id: book.id.toString(),
-      )).toList();
-      return NovelPage(
-        items: List.unmodifiable(filtered),
-        page: page,
-        totalPages: result.totalPages,
-        totalItems: filtered.length,
-      );
+    final officialEnabled = bookSources?.officialSearchEnabled ?? true;
+    final enabledSources = bookSources?.enabledSources ?? const <BookSourceConfig>[];
+    if (!officialEnabled && enabledSources.isEmpty) {
+      throw const FormatException('尚未选择搜索书源，请在书源管理中开启至少一个网站');
     }
-    final primaryFuture = _searchWenkuFilteredPage(
-      term,
-      field: field,
-      page: page,
-    );
-    final customFuture = field == BookSearchField.id
-        ? Future.value(const <NovelPage>[])
-        : _searchCustomSources(term, field: field, page: page);
+    if (field == BookSearchField.id) {
+      final id = int.tryParse(term);
+      if (id == null || page > 1) {
+        return NovelPage(items: const [], page: page, totalPages: 0);
+      }
+      final cached = _customBooks[id];
+      if (cached != null && enabledSources.any((source) => source.id == cached.sourceId)) {
+        return NovelPage(items: [cached], page: page, totalPages: 1, totalItems: 1);
+      }
+      if (!officialEnabled || id >= 0x40000000) {
+        return NovelPage(items: const [], page: page, totalPages: 0);
+      }
+      return _searchWenkuFilteredPage(term, field: field, page: page);
+    }
+    final primaryFuture = officialEnabled
+        ? _searchWenkuFilteredPage(term, field: field, page: page)
+        : Future.value(NovelPage(items: const [], page: page, totalPages: page));
+    final customFuture = _searchCustomSources(term, field: field, page: page);
     NovelPage primary;
     try {
       primary = await primaryFuture;
@@ -270,10 +245,14 @@ class LegacyWenkuRepository extends NovelRepository
     final customPages = await customFuture;
     // Preserve usable optional-source results, but never disguise a failed
     // official search as a genuine zero-result response.
+    final failures = <BookSearchField, Object>{
+      ...primary.searchFailures,
+      for (final result in customPages) ...result.searchFailures,
+    };
     if (primary.items.isEmpty &&
-        primary.searchFailures.isNotEmpty &&
+        failures.isNotEmpty &&
         customPages.every((result) => result.items.isEmpty)) {
-      throw primary.searchFailures.values.first;
+      throw failures.values.first;
     }
     final merged = <int, Novel>{
       for (final book in primary.items) book.id: book,
@@ -286,7 +265,7 @@ class LegacyWenkuRepository extends NovelRepository
       page: page,
       totalPages: customHasMore ? null : primary.totalPages ?? page,
       totalItems: null,
-      searchFailures: primary.searchFailures,
+      searchFailures: failures,
     );
   }
 
@@ -321,6 +300,9 @@ class LegacyWenkuRepository extends NovelRepository
         page: page,
         field: field == BookSearchField.author ? 'author' : 'title',
       );
+      for (final book in result.items) {
+        _customBooks[book.id] = book;
+      }
       if (field == BookSearchField.all) return result;
       final pattern = BookSearch(term, field: field);
       final filtered = result.items.where((book) => pattern.matches(
@@ -336,9 +318,14 @@ class LegacyWenkuRepository extends NovelRepository
         totalPages: result.totalPages,
         totalItems: filtered.length,
       );
-    } catch (_) {
-      // A broken optional source must not hide results from the primary site.
-      return NovelPage(items: const [], page: page, totalPages: page);
+    } catch (error) {
+      // Keep successful sources visible, but do not report a failed search as empty.
+      return NovelPage(
+        items: const [],
+        page: page,
+        totalPages: page,
+        searchFailures: {field: error},
+      );
     }
   }
 

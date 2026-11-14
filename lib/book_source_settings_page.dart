@@ -153,7 +153,7 @@ class BookSourceSettingsPage extends StatelessWidget {
                 style: TextStyle(fontSize: 21, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 8),
-              const AppText('发现、搜索、作品详情、目录和正文将优先使用所选网站。'),
+              const AppText('发现页使用所选网站；搜索由下方参与搜索的书源独立决定。'),
               const SizedBox(height: 18),
               ConstrainedBox(
                 constraints: BoxConstraints(
@@ -268,7 +268,7 @@ class BookSourceSettingsPage extends StatelessWidget {
                         ),
                         const SizedBox(height: 7),
                         AppText(
-                          '发现、搜索、详情、目录与正文使用此网站。点击切换。',
+                          '发现页使用此网站；搜索书源独立配置。点击切换。',
                           style: TextStyle(
                             fontSize: 12,
                             color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -283,6 +283,53 @@ class BookSourceSettingsPage extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 16),
+            sectionHeader(context, '参与搜索的网站', '${store.searchSourceCount} 个'),
+            const SizedBox(height: 12),
+            ContentPanel(
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: AppText('轻小说文库（默认）'),
+                  ),
+                  AppControls.toggle(
+                    context,
+                    value: store.officialSearchEnabled,
+                    onChanged: (value) async {
+                      await store.setOfficialSearchEnabled(value);
+                    },
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            const AppText('独立选择参与搜索的网站，不影响主页书源或登录网站。下方可逐个开启或关闭其他书源。'),
+            const SizedBox(height: 16),
+            sectionHeader(context, '内置网站预设', '一键添加'),
+            const SizedBox(height: 8),
+            for (final preset in BookSourceStore.builtInPresets)
+              if (store.byId(preset.id) == null) ...[
+                FeatureEntry(
+                  title: preset.name,
+                  subtitle: preset.supportsReading
+                      ? '添加后可配置参与搜索'
+                      : '仅网页登录，暂不支持应用内搜索',
+                  icon: CupertinoIcons.add_circled,
+                  onTap: () async {
+                    try {
+                      await store.installPreset(preset.id);
+                      if (context.mounted) {
+                        showNovelFeedback(context, '已添加 ${preset.name}');
+                      }
+                    } catch (error) {
+                      if (context.mounted) {
+                        showNovelFeedback(context, error.toString());
+                      }
+                    }
+                  },
+                ),
+                const SizedBox(height: 8),
+              ],
+            const SizedBox(height: 12),
             FeatureEntry(
               title: '添加自定义书源',
               subtitle: '配置静态网站 CSS 规则；支持已适配网站的专用 API',
@@ -334,13 +381,13 @@ class BookSourceSettingsPage extends StatelessWidget {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             AppText(
-                              '参与搜索',
+                              source.supportsReading ? '参与搜索' : '仅网页登录',
                               style: TextStyle(
                                 fontSize: 10,
                                 color: Theme.of(context).colorScheme.onSurfaceVariant,
                               ),
                             ),
-                            AppControls.toggle(
+                            if (source.supportsReading) AppControls.toggle(
                               context,
                               value: source.enabled,
                               onChanged: (value) async {

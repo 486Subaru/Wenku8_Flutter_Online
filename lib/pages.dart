@@ -941,6 +941,25 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
           },
         ),
       ),
+      if (_searchScope == 0 && _bookSourceStore != null)
+        SizedBox(
+          width: 40,
+          height: 46,
+          child: ArchiveIconButton(
+            key: const ValueKey('inline-search-source-settings'),
+            tooltip: '搜索书源配置',
+            icon: const ArchiveIcon(CupertinoIcons.globe, size: 19),
+            onPressed: () {
+              _dismissSearchKeyboard();
+              unawaited(pushNovelPage<void>(
+                context,
+                BookSourceSettingsPage(reduceMotion: _reduceMotion),
+                reduceMotion: _reduceMotion,
+                slot: ('settings', 'book-sources'),
+              ));
+            },
+          ),
+        ),
       SizedBox(
         width: 46,
         height: 46,
@@ -3134,7 +3153,7 @@ class SettingsPage extends StatelessWidget {
           FeatureEntry(
             key: const ValueKey('settings-book-sources'),
             title: '书源管理',
-            subtitle: '切换主页书源，添加网站并配置解析规则',
+            subtitle: '配置参与搜索的网站、主页书源与解析规则',
             icon: CupertinoIcons.globe,
             onTap: () => pushNovelPage<void>(
               context,

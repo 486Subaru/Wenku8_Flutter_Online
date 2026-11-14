@@ -370,6 +370,7 @@ class BookSourceStore extends ChangeNotifier {
   BookSourceStore(this.preferences);
   static const preferenceKey = 'custom_book_sources_v1';
   static const homepageSourcePreferenceKey = 'homepage_book_source_v1';
+  static const officialSearchPreferenceKey = 'official_wenku8_search_enabled_v1';
   static const loginSourcePreferenceKey = 'login_book_source_v1';
   static const loggedInSourcesPreferenceKey = 'logged_in_book_sources_v1';
   static const loginHomepageSeparationMigrationKey = 'login_homepage_separation_v1';
@@ -382,6 +383,16 @@ class BookSourceStore extends ChangeNotifier {
   List<BookSourceConfig> get enabledSources => List.unmodifiable(
     _sources.where((source) => source.enabled && source.supportsReading),
   );
+  /// Search scope is independent of the homepage and login selections.
+  bool get officialSearchEnabled =>
+      preferences.getBool(officialSearchPreferenceKey) ?? true;
+  int get searchSourceCount => enabledSources.length + (officialSearchEnabled ? 1 : 0);
+
+  Future<void> setOfficialSearchEnabled(bool enabled) async {
+    await preferences.setBool(officialSearchPreferenceKey, enabled);
+    notifyListeners();
+  }
+
   List<BookSourceConfig> get loginSources => List.unmodifiable(
     _sources.where((source) => source.loginUrl.trim().isNotEmpty),
   );

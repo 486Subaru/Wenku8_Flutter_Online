@@ -7,13 +7,14 @@ import 'book_sources.dart';
 /// without discarding the user's login cookies or source selection.
 Future<void> upgradeBuiltInSourceCompatibility(BookSourceStore store) async {
   const linovelId = 'linovel-net-web';
-  final linovelWasInstalled = store.byId(linovelId) != null;
+  final savedLinovel = store.byId(linovelId);
   final linovelWasSelectedForLogin = store.loginSourceId == linovelId;
   final linovelWasLoggedIn = store.isSourceLoggedIn(linovelId);
 
-  if (linovelWasInstalled) {
-    await store.save(_linovelNetReader);
-    if (linovelWasSelectedForLogin && linovelWasLoggedIn) {
+  if (savedLinovel != null && !savedLinovel.supportsReading) {
+    await store.save(_linovelNetReader.withEnabled(savedLinovel.enabled));
+    if (linovelWasSelectedForLogin && linovelWasLoggedIn &&
+        store.homepageSourceId == null) {
       // v2283 treated this preset as web-login-only, so a successful login
       // silently fell back to Wenku8 for the Discover page. Once upgraded to a
       // real reader source, restore the user's intent and use it as homepage.
@@ -22,8 +23,11 @@ Future<void> upgradeBuiltInSourceCompatibility(BookSourceStore store) async {
   }
 
   const bilinovelId = 'linovelib-web';
-  if (store.byId(bilinovelId) != null) {
-    await store.save(_bilinovelLogin);
+  final savedBilinovel = store.byId(bilinovelId);
+  if (savedBilinovel != null && !savedBilinovel.supportsReading &&
+      (savedBilinovel.baseUrl != _bilinovelLogin.baseUrl ||
+       !savedBilinovel.loginHosts.contains('www.bilinovel.com'))) {
+    await store.save(_bilinovelLogin.withEnabled(savedBilinovel.enabled));
   }
 }
 

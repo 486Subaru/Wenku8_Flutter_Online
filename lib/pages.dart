@@ -1126,7 +1126,7 @@ class DiscoverPage extends StatelessWidget {
                 ),
                 reduceMotion: state.reduceMotion,
               );
-              if (mounted) await feed!.retry();
+              if (context.mounted) await feed!.retry();
             }
           : null;
       final needsSourceLogin = failure is BookSourceAuthenticationRequired;

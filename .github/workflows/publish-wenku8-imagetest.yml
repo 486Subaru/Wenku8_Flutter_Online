@@ -1,0 +1,44 @@
+name: Publish verified Riqing illustration preview
+
+on:
+  push:
+    branches: ['verify/wenku8-imagetest-release']
+    paths: ['.github/workflows/publish-wenku8-imagetest.yml']
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    if: github.repository == '486Subaru/Wenku8_Flutter_Online'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Download and verify the tested APK
+        run: |
+          gh run download 44069370616 --name riqing-0.5.5-imagetest-arm64 --dir delivery
+          cd delivery
+          echo '302818561289cff4336ed370e8a6250b5ab8d71189491bfd02474972e0b7ff5c  riqing-0.5.5-imagetest-arm64.apk' | sha256sum --check
+          mv riqing-0.5.5-imagetest-arm64.apk 日轻.apk
+      - name: Publish the independent ARM64 preview
+        run: |
+          cat > release-notes.md <<'EOF'
+          插图与联网修复的 ARM64 预发布安装包。支持与现有「日轻」并存，桌面显示「日轻插图测试」，包名为 `org.mewx.wenku8_flutter.online.imagetest`。
+
+          本次修复了官网图片与正文共用队列、延迟加载插图地址遗漏，以及无效图片被保存为离线缓存的问题。
+
+          已通过回归测试、安卓原生测试和安卓 14 模拟器安装启动验证。正式版本继续使用原有安装包。
+
+          - [源码修复](https://github.com/486Subaru/Wenku8_Flutter_Online/commit/14e34663e8976bc47f88fea918c369714abe2fe1)
+          - [测试包构建](https://github.com/486Subaru/Wenku8_Flutter_Online/actions/runs/44069370616)
+          - [原分支构建](https://github.com/486Subaru/Wenku8_Flutter_Online/actions/runs/44070550582)
+          - SHA-256 `302818561289cff4336ed370e8a6250b5ab8d71189491bfd02474972e0b7ff5c`
+          EOF
+          gh release create riqing-v0.5.5-2286-illustration-test 'delivery/日轻.apk#日轻.apk' \
+            --target 7d76ce1f5df791c0182ba8b00627cf314a256b2b \
+            --prerelease --latest=false --title '日轻 0.5.5（2286）插图与联网修复测试版' \
+            --notes-file release-notes.md

@@ -18,6 +18,10 @@ class OnlineChallengeRequired implements Exception {
   String toString() => '官网要求浏览器验证，请先完成官方网页登录验证后重试';
 }
 
+class OnlinePageNotFound extends FormatException {
+  const OnlinePageNotFound() : super('官网返回 HTTP 404');
+}
+
 class OnlineRateLimited extends FormatException {
   OnlineRateLimited(String reason, {this.retryAfterSeconds})
     : super(_message(reason, retryAfterSeconds));

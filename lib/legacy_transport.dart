@@ -24,6 +24,9 @@ abstract final class LegacyTransport {
     if (failure.code == 'WEB_CHALLENGE') {
       throw const OnlineChallengeRequired();
     }
+    if (failure.code == 'WEB_NOT_FOUND') {
+      throw const OnlinePageNotFound();
+    }
     if (failure.code == 'WEB_RATE_LIMITED') {
       final details = failure.details;
       final seconds = details is Map ? details['retryAfterSeconds'] : null;

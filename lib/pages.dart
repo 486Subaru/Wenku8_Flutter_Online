@@ -7311,6 +7311,19 @@ class _ReaderPageState extends State<ReaderPage>
     return request;
   }
 
+  bool _canPrepareChapterInBackground(int index) {
+    final repository = widget.repository;
+    if (repository is! OfflineNovelRepository || isLocalBook(_sourceBook.id)) {
+      return true;
+    }
+    if (!repository.offline && _sourceBook.sourceId != null) return true;
+    return repository.cache
+            .book(_sourceBook.id)
+            ?.chapterBytes
+            .containsKey(_sourceBook.chapters[index].id) ??
+        false;
+  }
+
   void _prefetchAdjacent() {
     _automaticContent.removeWhere((index, _) => (index - _chapter).abs() > 1);
     _preparedContent.removeWhere((index, _) => (index - _chapter).abs() > 1);
@@ -7322,18 +7335,7 @@ class _ReaderPageState extends State<ReaderPage>
     }
     for (final index in [_chapter + 1, _chapter - 1]) {
       if (index < 0 || index >= _sourceBook.chapters.length) continue;
-      if (widget.repository case final OfflineNovelRepository offline) {
-        final official = _sourceBook.sourceId == null && !isLocalBook(_sourceBook.id);
-        if ((offline.offline || official) &&
-            !isLocalBook(widget.novel.id) &&
-            offline.cache
-                    .book(widget.novel.id)
-                    ?.chapterBytes
-                    .containsKey(_sourceBook.chapters[index].id) !=
-                true) {
-          continue;
-        }
-      }
+      if (!_canPrepareChapterInBackground(index)) continue;
       unawaited(
         _prepareDisplayContent(index).then<void>((_) {
           if (mounted &&
@@ -10607,6 +10609,7 @@ class _ReaderPageState extends State<ReaderPage>
                       data.content.readingOrder?.length ??
                       data.content.paragraphs.length,
                   load: _prepareDisplayContent,
+                  canPrepareInBackground: _canPrepareChapterInBackground,
                   onChapterChanged: _adoptScrollChapter,
                   pendingBuilder: (context, chapter, error, retry) => Padding(
                     padding: const EdgeInsets.symmetric(

@@ -81,6 +81,7 @@ class ReaderScrollStream<T> extends StatefulWidget {
     required this.onChapterChanged,
     this.readingInset = 0,
     this.canAdopt,
+    this.canPrepareInBackground,
     this.deferPreparation = false,
     this.continuous = true,
   });
@@ -105,6 +106,10 @@ class ReaderScrollStream<T> extends StatefulWidget {
   final void Function(int chapter, T data) onChapterChanged;
   final double readingInset;
   final bool Function()? canAdopt;
+
+  /// Keep the boundary row available for scrolling even when its load must
+  /// wait until it is visible or selected.
+  final bool Function(int chapter)? canPrepareInBackground;
   final bool deferPreparation;
   final bool continuous;
   @override
@@ -212,6 +217,9 @@ class _ReaderScrollStreamState<T> extends State<ReaderScrollStream<T>> {
       entry.foreground = true;
     }
     if (entry.data != null || entry.loading || entry.error != null && !retry) {
+      return;
+    }
+    if (!foreground && widget.canPrepareInBackground?.call(index) == false) {
       return;
     }
     final epoch = _epoch;

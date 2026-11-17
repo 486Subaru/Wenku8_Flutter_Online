@@ -347,6 +347,8 @@ class LegacyWenkuRepository extends NovelRepository
         book = (await _loadDetail(id)).book;
       } on _MissingWenkuBook {
         book = null;
+      } on OnlinePageNotFound {
+        book = null;
       }
       return NovelPage(
         items: book == null ? const [] : [book],

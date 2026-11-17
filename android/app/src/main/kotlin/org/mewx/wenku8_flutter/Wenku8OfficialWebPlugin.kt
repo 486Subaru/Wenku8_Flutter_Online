@@ -464,6 +464,9 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
                     throw WebFailure("WEB_BLOCKED", "官网拒绝了应用的网络请求，请检查网络或稍后重试")
                 }
 
+                if (!image && status == 404) {
+                    throw WebFailure("WEB_NOT_FOUND", "官网返回 HTTP 404")
+                }
                 if (status !in 200..299) throw WebFailure("WEB_HTTP_ERROR", "官网返回 HTTP " + status)
 
                 if (!image) {

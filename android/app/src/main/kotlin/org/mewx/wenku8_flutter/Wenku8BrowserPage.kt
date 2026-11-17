@@ -124,6 +124,8 @@ internal object Wenku8BrowserPage {
                                 httpStatus == 403 ->
                                     finish(failure = Failure("WEB_BLOCKED", "官网拒绝浏览器请求，请稍后重试"))
 
+                                httpStatus == 404 ->
+                                    finish(failure = Failure("WEB_NOT_FOUND", "官网返回 HTTP 404"))
                                 httpStatus !in 200..299 ->
                                     finish(failure = Failure("WEB_HTTP_ERROR", "官网浏览器返回 HTTP $httpStatus"))
                                 html.isBlank() ->

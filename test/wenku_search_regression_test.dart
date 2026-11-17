@@ -77,6 +77,22 @@ void main() {
     );
   });
 
+  test('ID search treats an official 404 as a genuine missing book', () async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(LegacyTransport.channel, (call) async {
+      throw PlatformException(code: 'WEB_NOT_FOUND');
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(LegacyTransport.channel, null));
+
+    final result = await LegacyWenkuRepository().searchFilteredPage(
+      '123',
+      field: BookSearchField.id,
+    );
+    expect(result.items, isEmpty);
+    expect(result.searchFailures, isEmpty);
+  });
+
   test('an actual empty search is not marked as incomplete', () async {
     final repository = LegacyWenkuRepository(
       searchRequest: (query, {field = 'articlename', page = 1}) async =>

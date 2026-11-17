@@ -165,7 +165,7 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
                 // The official form omits the page parameter on its initial request.
                 val url = BASE + "/modules/article/search.php?searchtype=" + field +
                     "&searchkey=" + encoded + (if (page > 1) "&page=" + page else "")
-                dispatch(result) { requestOfficialText(url, BASE + "/index.php") }
+                dispatch(result) { requestOfficialText(url, BASE + "/index.php", search = true) }
             }
             "officialAction" -> {
                 val rawUrl = call.argument<String>("url")
@@ -347,22 +347,23 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
      * native client. Never solve challenges automatically or share cookies across domains.
      * Remember a successful browser path briefly to avoid repeated challenges.
      */
-    private fun requestOfficialText(rawUrl: String, referer: String?): String {
+    private fun requestOfficialText(rawUrl: String, referer: String?, search: Boolean = false): String {
         val url = Wenku8SessionCookies.routeOfficialPage(rawUrl)
         val routedReferer = referer?.let(Wenku8SessionCookies::routeOfficialPage)
         if (!Wenku8UrlPolicy.isOfficialPage(url)) {
             throw WebFailure("WEB_BAD_URL", "网页地址不在允许访问的文库域名内")
         }
-        if (SystemClock.elapsedRealtime() >= preferBrowserUntil) {
+        val useNative = SystemClock.elapsedRealtime() >= preferBrowserUntil
+        if (useNative) {
             try {
-                val reply = request(url, routedReferer, MAX_TEXT_BYTES, image = false)
+                val reply = request(url, routedReferer, MAX_TEXT_BYTES, image = false, search = search)
                 return decode(reply.bytes, reply.contentType)
             } catch (failure: WebFailure) {
                 // A refusal is not a challenge to replay through another client.
                 if (failure.code != "WEB_CHALLENGE") throw failure
             }
         }
-        val reply = readOfficialBrowser(url, routedReferer)
+        val reply = readOfficialBrowser(url, routedReferer, search = search)
         if (SystemClock.elapsedRealtime() >= preferBrowserUntil) {
             preferBrowserUntil = SystemClock.elapsedRealtime() + 2 * 60_000L
         }
@@ -372,8 +373,13 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
         return reply.html
     }
 
-    private fun readOfficialBrowser(url: String, referer: String?, body: ByteArray? = null): Wenku8BrowserPage.Page {
-        waitForRequestSlot()
+    private fun readOfficialBrowser(
+        url: String,
+        referer: String?,
+        body: ByteArray? = null,
+        search: Boolean = false,
+    ): Wenku8BrowserPage.Page {
+        waitForRequestSlot(search)
         return try {
             Wenku8BrowserPage.read(appContext, url, referer, MAX_TEXT_BYTES, body)
         } catch (failure: Wenku8BrowserPage.Failure) {
@@ -384,13 +390,19 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
         }
     }
 
-    private fun request(rawUrl: String, referer: String?, maxBytes: Int, image: Boolean): Reply {
+    private fun request(
+        rawUrl: String,
+        referer: String?,
+        maxBytes: Int,
+        image: Boolean,
+        search: Boolean = false,
+    ): Reply {
         var current = runCatching { URL(rawUrl) }
             .getOrElse { throw WebFailure("WEB_BAD_URL", "网页地址无效") }
         if (!allowed(current, image)) throw WebFailure("WEB_BAD_URL", "网页地址不在允许访问的文库域名内")
 
         for (hop in 0..4) {
-            waitForRequestSlot()
+            waitForRequestSlot(search && (hop == 0 || current.path.endsWith("/search.php")))
             val connection = current.openConnection() as HttpURLConnection
             try {
                 connection.requestMethod = "GET"
@@ -741,13 +753,13 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
         )
     }
 
-    private fun waitForRequestSlot() {
+    private fun waitForRequestSlot(search: Boolean) {
         val now = SystemClock.elapsedRealtime()
         val remaining = pacing.remainingCooldownMs(now)
         if (remaining > 0L) throw rateLimitFailure(remaining)
-        val delay = pacing.delayMs(now)
+        val delay = pacing.delayMs(now, search)
         if (delay > 0L) Thread.sleep(delay)
-        pacing.markStarted(SystemClock.elapsedRealtime())
+        pacing.markStarted(SystemClock.elapsedRealtime(), search)
     }
 
     private fun readBounded(input: java.io.InputStream, limit: Int): ByteArray {

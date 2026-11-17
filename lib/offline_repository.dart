@@ -71,7 +71,7 @@ class _ChapterRequest {
 /// Adds persistent offline reading without changing the remote request contract.
 /// Download notifications are independent of appearance/reader state updates.
 class OfflineNovelRepository extends FrameChangeNotifier
-    implements NovelRepository, ProgressiveTagCatalogue {
+    implements NovelRepository, ProgressiveTagCatalogue, ProgressiveBookSearch {
   OfflineNovelRepository({
     required this.remote,
     required this.cache,
@@ -168,8 +168,20 @@ class OfflineNovelRepository extends FrameChangeNotifier
     BookSearchField field = BookSearchField.all,
     int page = 1,
     bool refresh = false,
+    bool Function()? current,
+    void Function(List<Novel>)? onProgress,
   }) async {
     if (!offline) {
+      if (remote case final ProgressiveBookSearch progressive) {
+        return progressive.searchFilteredPage(
+          query,
+          field: field,
+          page: page,
+          refresh: refresh,
+          current: current,
+          onProgress: onProgress,
+        );
+      }
       return remote.searchFilteredPage(
         query,
         field: field,

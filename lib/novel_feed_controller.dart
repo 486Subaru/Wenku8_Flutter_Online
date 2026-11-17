@@ -377,30 +377,38 @@ class NovelFeedController extends ChangeNotifier {
     notifyListeners();
     try {
       while (true) {
-        void acceptTagProgress(TagSearchProgress progress) {
-          if (_disposed || generation != _generation) return;
-          _tagProgress = progress;
-          if (!retaining && progress.items.isNotEmpty) {
-            final oldCount = pending.length;
-            final merged = <int, Novel>{
-              if (!replacing)
-                for (final item in pending) item.id: item,
-              for (final item in progress.items) item.id: item,
-            };
-            final first = replacing ? 0 : oldCount;
-            pending = List.unmodifiable(merged.values);
-            replacing = false;
-            _items = pending;
-            _visibleItems = null;
-            _tagSuggestions.addAll(pending.expand((book) => book.tags));
-            BookTagCatalog.shared.observe(_tagSuggestions);
-            if (first < pending.length) {
-              _resultStartIndex = first;
-              _resultReplacesRetained = false;
-              _resultRevision++;
-            }
+        bool current() => !_disposed && generation == _generation;
+        void acceptItems(List<Novel> items) {
+          if (!current() || retaining || items.isEmpty) return;
+          final oldCount = pending.length;
+          final merged = <int, Novel>{
+            if (!replacing)
+              for (final item in pending) item.id: item,
+            for (final item in items) item.id: item,
+          };
+          final first = replacing ? 0 : oldCount;
+          pending = List.unmodifiable(merged.values);
+          replacing = false;
+          _items = pending;
+          _visibleItems = null;
+          _tagSuggestions.addAll(pending.expand((book) => book.tags));
+          BookTagCatalog.shared.observe(_tagSuggestions);
+          if (first < pending.length) {
+            _resultStartIndex = first;
+            _resultReplacesRetained = false;
+            _resultRevision++;
           }
           notifyListeners();
+        }
+
+        void acceptTagProgress(TagSearchProgress progress) {
+          if (!current()) return;
+          _tagProgress = progress;
+          if (!retaining && progress.items.isNotEmpty) {
+            acceptItems(progress.items);
+          } else {
+            notifyListeners();
+          }
         }
 
         final tagOnly =
@@ -421,8 +429,17 @@ class NovelFeedController extends ChangeNotifier {
                 requestedQuery,
                 page: requestedPage,
                 refresh: force,
-                current: () => !_disposed && generation == _generation,
+                current: current,
                 onProgress: acceptTagProgress,
+              )
+            : search && repository is ProgressiveBookSearch
+            ? await (repository as ProgressiveBookSearch).searchFilteredPage(
+                requestedQuery,
+                field: requestedField,
+                page: requestedPage,
+                refresh: force,
+                current: current,
+                onProgress: acceptItems,
               )
             : search || filteringTags
             ? await repository.searchFilteredPage(
@@ -436,7 +453,7 @@ class NovelFeedController extends ChangeNotifier {
                 page: requestedPage,
                 refresh: force,
               );
-        if (_disposed || generation != _generation) return;
+        if (!current()) return;
         if (result.page != requestedPage) {
           throw const FormatException('分页游标不匹配');
         }
@@ -491,7 +508,7 @@ class NovelFeedController extends ChangeNotifier {
         }
         if (complete) break;
         if (!retaining) notifyListeners();
-        if (_disposed || generation != _generation) return;
+        if (!current()) return;
         requestedPage++;
       }
     } catch (failure) {

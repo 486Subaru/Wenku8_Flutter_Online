@@ -380,6 +380,19 @@ abstract class NovelRepository {
   }
 }
 
+/// A repository may surface some matches while its remaining sources or
+/// search fields are still running. The completed page owns the final cursor.
+abstract interface class ProgressiveBookSearch {
+  Future<NovelPage> searchFilteredPage(
+    String query, {
+    BookSearchField field = BookSearchField.all,
+    int page = 1,
+    bool refresh = false,
+    bool Function()? current,
+    void Function(List<Novel>)? onProgress,
+  });
+}
+
 bool sameNovelAuthor(String a, String b) {
   String key(String name) =>
       name.replaceAll(RegExp(r'[\s\u3000]+'), '').toLowerCase();

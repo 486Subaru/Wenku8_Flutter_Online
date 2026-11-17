@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wenku8_flutter/legacy_transport.dart';
@@ -101,5 +103,51 @@ void main() {
     final result = await repository.searchFilteredPage('测试');
     expect(result.items, isEmpty);
     expect(result.searchFailures, isEmpty);
+  });
+
+  test('shows title matches while the author search is still pending', () async {
+    final authorReply = Completer<String>();
+    final repository = LegacyWenkuRepository(
+      searchRequest: (query, {field = 'articlename', page = 1}) async {
+        if (field == 'author') return authorReply.future;
+        return '<a href="/book/123.htm">书名匹配</a>';
+      },
+    );
+    final feed = NovelFeedController(repository, search: true);
+    addTearDown(feed.dispose);
+    final visible = Completer<void>();
+    feed.addListener(() {
+      if (feed.items.isNotEmpty && !visible.isCompleted) visible.complete();
+    });
+
+    final finished = feed.searchFor('测试');
+    await visible.future.timeout(const Duration(seconds: 2));
+    expect(feed.items.single.id, 123);
+    expect(feed.loading, isTrue);
+
+    authorReply.complete('<a href="/book/456.htm">作者匹配</a>');
+    await finished;
+    expect(feed.items.map((book) => book.id), [123, 456]);
+    expect(feed.loading, isFalse);
+  });
+
+  test('closing search while title is in flight skips the stale author request', () async {
+    final titleReply = Completer<String>();
+    final requests = <String>[];
+    final repository = LegacyWenkuRepository(
+      searchRequest: (query, {field = 'articlename', page = 1}) async {
+        requests.add(field);
+        return titleReply.future;
+      },
+    );
+    final feed = NovelFeedController(repository, search: true);
+    addTearDown(feed.dispose);
+    final finished = feed.searchFor('测试');
+    expect(requests, ['articlename']);
+    feed.cancelScheduledSearch();
+    titleReply.complete('<a href="/book/123.htm">旧搜索</a>');
+    await finished;
+    expect(requests, ['articlename']);
+    expect(feed.items, isEmpty);
   });
 }

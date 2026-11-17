@@ -24,7 +24,7 @@ class _MissingWenkuBook extends FormatException {
 /// Official-site repository. It reads pages through the Android WebView-backed
 /// transport and never downloads or exports whole-book files.
 class LegacyWenkuRepository extends NovelRepository
-    implements PublicationCatalog, ProgressiveTagCatalogue {
+    implements PublicationCatalog, ProgressiveTagCatalogue, ProgressiveBookSearch {
   LegacyWenkuRepository({
     _WenkuPageRequest? request,
     _WenkuSearchRequest? searchRequest,
@@ -203,6 +203,8 @@ class LegacyWenkuRepository extends NovelRepository
     BookSearchField field = BookSearchField.all,
     int page = 1,
     bool refresh = false,
+    bool Function()? current,
+    void Function(List<Novel>)? onProgress,
   }) async {
     final term = query.trim();
     if (term.isEmpty) {
@@ -231,9 +233,20 @@ class LegacyWenkuRepository extends NovelRepository
       return _searchWenkuFilteredPage(term, field: field, page: page);
     }
     final primaryFuture = officialEnabled
-        ? _searchWenkuFilteredPage(term, field: field, page: page)
+        ? _searchWenkuFilteredPage(
+            term,
+            field: field,
+            page: page,
+            current: current,
+            onTitle: onProgress,
+          )
         : Future.value(NovelPage(items: const [], page: page, totalPages: page));
-    final customFuture = _searchCustomSources(term, field: field, page: page);
+    final customFuture = _searchCustomSources(
+      term,
+      field: field,
+      page: page,
+      current: current,
+    );
     NovelPage primary;
     try {
       primary = await primaryFuture;
@@ -246,6 +259,9 @@ class LegacyWenkuRepository extends NovelRepository
         totalPages: page,
         searchFailures: {field: error},
       );
+    }
+    if (current?.call() != false && primary.items.isNotEmpty) {
+      onProgress?.call(primary.items);
     }
     final customPages = await customFuture;
     // Preserve usable optional-source results, but never disguise a failed
@@ -276,12 +292,14 @@ class LegacyWenkuRepository extends NovelRepository
     String term, {
     required BookSearchField field,
     required int page,
+    bool Function()? current,
   }) async {
     final sources = bookSources?.enabledSources ?? const <BookSourceConfig>[];
     if (sources.isEmpty) return const [];
     const concurrency = 3;
     final results = <NovelPage>[];
     for (var offset = 0; offset < sources.length; offset += concurrency) {
+      if (current?.call() == false) break;
       final batch = sources.skip(offset).take(concurrency);
       results.addAll(await Future.wait([
         for (final source in batch)
@@ -336,6 +354,8 @@ class LegacyWenkuRepository extends NovelRepository
     String term, {
     required BookSearchField field,
     required int page,
+    bool Function()? current,
+    void Function(List<Novel>)? onTitle,
   }) async {
     if (field == BookSearchField.id) {
       final id = int.tryParse(term);
@@ -395,6 +415,9 @@ class LegacyWenkuRepository extends NovelRepository
     }
 
     final byTitle = await independent(BookSearchField.title, 'articlename');
+    if (current?.call() == false) return byTitle;
+    if (byTitle.items.isNotEmpty) onTitle?.call(byTitle.items);
+    if (current?.call() == false) return byTitle;
     final titleFailure = byTitle.searchFailures[BookSearchField.title];
     final byAuthor = titleFailure is OnlineRateLimited
         ? NovelPage(

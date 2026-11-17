@@ -226,7 +226,7 @@ void main() {
 
     final result = await repository.searchFilteredPage('Novel');
     expect(result.items, isEmpty);
-    expect(result.searchFailures, contains(BookSearchField.all));
+    expect(result.searchFailures.keys, containsAll([BookSearchField.title, BookSearchField.author]));
   });
 
   test('parses search, detail, table of contents and chapter images', () async {

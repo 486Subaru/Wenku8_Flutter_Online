@@ -41,9 +41,10 @@ class OnlinePageNotFound extends FormatException {
 }
 
 class OnlineRateLimited extends FormatException {
-  OnlineRateLimited(String reason, {this.retryAfterSeconds})
+  OnlineRateLimited(this.reason, {this.retryAfterSeconds})
     : super(_message(reason, retryAfterSeconds));
 
+  final String reason;
   final int? retryAfterSeconds;
 
   static String _message(String reason, int? seconds) {

@@ -9,6 +9,7 @@ import 'offline_cache.dart';
 import 'local_books.dart';
 import 'network_status.dart';
 import 'legacy_transport.dart';
+import 'online_component.dart';
 import 'reader_content.dart'
     show ReaderContent, readerHasMissingIllustrations, readerIllustrationUrl;
 import 'ui_notifiers.dart';
@@ -35,6 +36,7 @@ class ChapterDownload {
   bool cachingIllustrations = false;
   String? failedChapter;
   Object? error;
+  bool _directoryPrepared = false;
 
   bool get active => switch (phase) {
     DownloadPhase.queued ||
@@ -52,13 +54,24 @@ class ChapterDownload {
     DownloadPhase.completed =>
       '缓存完成 · $completed 章${illustrations > 0 ? ' · $illustrations 张插图' : ''}',
     DownloadPhase.cancelled => '已取消 · 保留已缓存章节',
-    DownloadPhase.failed =>
-      failedChapter == null
-          ? '获取目录失败，可重试'
-          : cachingIllustrations
-          ? '「$failedChapter」插图未缓存完成，可继续缓存'
-          : '「$failedChapter」缓存失败，可重试',
+    DownloadPhase.failed => _failureLabel,
   };
+
+  String get _failureLabel {
+    final failure = error;
+    if (failure is OnlineRateLimited) {
+      return '${failure.reason} · 已保留已缓存章节，访问恢复后可继续';
+    }
+    if (failure is OnlineAccessRequired) return failure.message;
+    if (failedChapter == null) {
+      return failure is FormatException
+          ? '获取目录失败 · ${failure.message}'
+          : '获取目录失败，可重试';
+    }
+    return cachingIllustrations
+        ? '「$failedChapter」插图未缓存完成，可继续缓存'
+        : '「$failedChapter」缓存失败，可重试';
+  }
 }
 
 class _ChapterRequest {
@@ -77,6 +90,7 @@ class OfflineNovelRepository extends FrameChangeNotifier
     required this.cache,
     this.local,
     this.network,
+    this.officialCacheInterval = const Duration(milliseconds: 5200),
     Future<Uint8List> Function(String url)? illustrationRequest,
   }) : _illustrationRequest =
            illustrationRequest ??
@@ -90,6 +104,9 @@ class OfflineNovelRepository extends FrameChangeNotifier
   final OfflineCacheStore cache;
   final LocalBookStore? local;
   final NetworkStatus? network;
+  final Duration officialCacheInterval;
+  final Stopwatch _cacheClock = Stopwatch()..start();
+  Duration? _lastOfficialCacheStart;
   final Future<Uint8List> Function(String url) _illustrationRequest;
   bool get offline => network?.offline ?? false;
   bool availableOffline(int id) =>
@@ -513,15 +530,21 @@ class OfflineNovelRepository extends FrameChangeNotifier
 
   void download(Novel novel, {Set<int>? chapterIds}) {
     if (isLocalBook(novel.id)) return;
-    if (_disposed || jobFor(novel.id)?.active == true) return;
-    final job = ChapterDownload(
-      novel,
-      chapterIds == null ? null : Set.unmodifiable(chapterIds),
-      cache.epochFor(novel.id),
+    _enqueue(
+      ChapterDownload(
+        novel,
+        chapterIds == null ? null : Set.unmodifiable(chapterIds),
+        cache.epochFor(novel.id),
+      ),
     );
-    _jobs[novel.id] = job;
+  }
+
+  void _enqueue(ChapterDownload job) {
+    final id = job.novel.id;
+    if (_disposed || jobFor(id)?.active == true) return;
+    _jobs[id] = job;
     _queue.add(job);
-    _changed(novel.id);
+    _changed(id);
     if (!_draining) unawaited(_drain());
   }
 
@@ -535,7 +558,13 @@ class OfflineNovelRepository extends FrameChangeNotifier
   void retry(int id) {
     final previous = _jobs[id];
     if (previous == null || previous.active) return;
-    download(previous.novel, chapterIds: previous.chapterIds);
+    final epoch = cache.epochFor(id);
+    final job = ChapterDownload(previous.novel, previous.chapterIds, epoch);
+    job._directoryPrepared =
+        previous.novel.sourceId == null &&
+        previous._directoryPrepared &&
+        previous.epoch == epoch;
+    _enqueue(job);
   }
 
   bool _current(ChapterDownload job) {
@@ -561,24 +590,62 @@ class OfflineNovelRepository extends FrameChangeNotifier
     }
   }
 
+  Future<T?> _cacheRequest<T>(
+    ChapterDownload job,
+    Future<T> Function() request,
+  ) async {
+    if (!_current(job)) return null;
+    if (job.novel.sourceId == null) {
+      // Wait outside the native request queue so foreground work can run.
+      final last = _lastOfficialCacheStart;
+      if (last != null) {
+        final remaining = officialCacheInterval - (_cacheClock.elapsed - last);
+        if (remaining > Duration.zero) await Future<void>.delayed(remaining);
+      }
+      if (!_current(job)) return null;
+      _lastOfficialCacheStart = _cacheClock.elapsed;
+    }
+    return request();
+  }
+
+  Future<Novel?> _prepareDirectory(ChapterDownload job) async {
+    if (job._directoryPrepared) return job.novel;
+    var full = job.novel;
+    final selected = job.chapterIds;
+    final chapterIds = full.chapters.map((chapter) => chapter.id).toSet();
+    final canReuseSelection =
+        full.sourceId == null &&
+        selected != null &&
+        selected.isNotEmpty &&
+        !chapterIds.any((id) => id <= 0) &&
+        chapterIds.length == full.chapters.length &&
+        chapterIds.containsAll(selected);
+    if (!canReuseSelection) {
+      // Refresh the full directory for a new whole-book download.
+      final meta = await _cacheRequest(job, () => remote.detail(full));
+      if (meta == null || !_current(job)) return null;
+      final chapters = await _cacheRequest(job, () => remote.chapters(meta.id));
+      if (chapters == null || !_current(job)) return null;
+      full = meta.withChapters(chapters);
+    }
+    if (full.chapters.isEmpty) throw const FormatException('目录为空');
+    final stored = await cache.saveBook(full, epoch: job.epoch);
+    if (!_current(job)) return null;
+    if (!stored) throw StateError('目录缓存未完成');
+    _known[full.id] = full;
+    job.novel = full;
+    job._directoryPrepared = true;
+    return full;
+  }
+
   Future<void> _run(ChapterDownload job) async {
     try {
       job.phase = DownloadPhase.preparing;
       _changed(job.novel.id);
       if (offline) throw const FormatException('当前无网络连接，联网后可继续缓存');
-      // Refresh through the same legacy calls before an explicit book download.
-      final meta = await remote.detail(job.novel);
-      if (!_current(job)) return;
-      final chapters = await remote.chapters(meta.id);
-      if (!_current(job)) return;
-      final full = meta.withChapters(chapters);
-      if (chapters.isEmpty) throw const FormatException('目录为空');
-      final stored = await cache.saveBook(full, epoch: job.epoch);
-      if (!_current(job)) return;
-      if (!stored) throw StateError('目录缓存未完成');
-      _known[meta.id] = full;
-      job.novel = full;
-      final selected = chapters
+      final meta = await _prepareDirectory(job);
+      if (meta == null || !_current(job)) return;
+      final selected = meta.chapters
           .where((c) => job.chapterIds?.contains(c.id) ?? true)
           .toList();
       if (selected.isEmpty) throw const FormatException('选择的章节已不在目录中');
@@ -596,7 +663,13 @@ class OfflineNovelRepository extends FrameChangeNotifier
           if (!_current(job)) return;
           var text = saved;
           if (text == null || readerHasMissingIllustrations(text)) {
-            text = await _fetch(meta.id, chapter, request);
+            text = request.response == null
+                ? await _cacheRequest(
+                    job,
+                    () => _fetch(meta.id, chapter, request),
+                  )
+                : await _fetch(meta.id, chapter, request);
+            if (text == null) return;
             if (saved != null && readerHasMissingIllustrations(text)) {
               job.cachingIllustrations = true;
               throw const FormatException('本章插图地址暂未完整返回，原有正文已保留，请稍后继续缓存');
@@ -634,8 +707,9 @@ class OfflineNovelRepository extends FrameChangeNotifier
               if (retained == null && offline) {
                 throw const FormatException('当前无网络连接，联网后可继续缓存插图');
               }
-              final bytes = retained ?? await _illustrationRequest(url);
-              if (!_current(job)) return;
+              final bytes = retained ??
+                  await _cacheRequest(job, () => _illustrationRequest(url));
+              if (bytes == null || !_current(job)) return;
               final stored = await cache.saveIllustration(
                 meta.id,
                 url,

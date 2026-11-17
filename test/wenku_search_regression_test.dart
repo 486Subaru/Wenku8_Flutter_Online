@@ -170,6 +170,50 @@ void main() {
     expect(result.searchFailures, isEmpty);
   });
 
+  test('accepts the official empty grid without using unrelated book links', () async {
+    final repo = LegacyWenkuRepository(
+      searchRequest: (query, {field = 'articlename', page = 1}) async => '''
+        <title>WenkuProbeQQ4927搜索结果 - 轻小说文库</title>
+        <aside><a href="/book/999.htm">无关推荐</a></aside>
+        <div id="content">
+          <table class="grid"><caption>“WenkuProbeQQ4927”搜索结果</caption></table>
+          <div class="pages"><span id="pagestats">1/1</span></div>
+        </div>
+      ''',
+    );
+    final result = await repo.searchFilteredPage('WenkuProbeQQ4927', field: BookSearchField.title);
+    expect(result.items, isEmpty);
+    expect(result.searchFailures, isEmpty);
+    expect(result.hasMore, isFalse);
+  });
+
+  test('an error containing a generic missing message is not a zero-result search', () async {
+    final repo = LegacyWenkuRepository(
+      searchRequest: (query, {field = 'articlename', page = 1}) async =>
+          '<title>请求失败</title><div id="content">没有找到登录会话</div>',
+    );
+    final result = await repo.searchFilteredPage('魔法', field: BookSearchField.title);
+    expect(result.items, isEmpty);
+    expect(result.searchFailures[BookSearchField.title], isA<FormatException>());
+  });
+
+  test('reads official results inside the grid and preserves the reported last page', () async {
+    final repo = LegacyWenkuRepository(
+      searchRequest: (query, {field = 'articlename', page = 1}) async => '''
+        <title>魔法搜索结果 - 轻小说文库</title>
+        <aside><a href="/book/999.htm">无关推荐</a></aside>
+        <div id="content">
+          <table class="grid"><tr><td><a href="/book/4358.htm">测试作品</a></td></tr></table>
+          <div class="pages"><span id="pagestats">1/7</span></div>
+        </div>
+      ''',
+    );
+    final result = await repo.searchFilteredPage('魔法', field: BookSearchField.title);
+    expect(result.items.map((book) => book.id), [4358]);
+    expect(result.totalPages, 7);
+    expect(result.searchFailures, isEmpty);
+  });
+
   test('shows title matches while the author search is still pending', () async {
     final authorReply = Completer<String>();
     final repository = LegacyWenkuRepository(

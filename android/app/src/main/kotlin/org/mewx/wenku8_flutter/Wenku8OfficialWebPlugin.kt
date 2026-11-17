@@ -363,7 +363,7 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
                 if (failure.code != "WEB_CHALLENGE") throw failure
             }
         }
-        val reply = readOfficialBrowser(url, routedReferer, search = search)
+        val reply = readOfficialBrowser(url, routedReferer, search = search, continuation = useNative)
         if (SystemClock.elapsedRealtime() >= preferBrowserUntil) {
             preferBrowserUntil = SystemClock.elapsedRealtime() + 2 * 60_000L
         }
@@ -378,8 +378,9 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
         referer: String?,
         body: ByteArray? = null,
         search: Boolean = false,
+        continuation: Boolean = false,
     ): Wenku8BrowserPage.Page {
-        waitForRequestSlot(search)
+        waitForRequestSlot(search, continuation)
         return try {
             Wenku8BrowserPage.read(appContext, url, referer, MAX_TEXT_BYTES, body)
         } catch (failure: Wenku8BrowserPage.Failure) {
@@ -406,7 +407,8 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
         if (!allowed(current, image)) throw WebFailure("WEB_BAD_URL", "网页地址不在允许访问的文库域名内")
 
         for (hop in 0..4) {
-            waitForRequestSlot(search && (hop == 0 || current.path.endsWith("/search.php")))
+            val searchEndpoint = search && (hop == 0 || current.path.endsWith("/search.php"))
+            waitForRequestSlot(searchEndpoint, continuation = hop > 0)
             val connection = current.openConnection() as HttpURLConnection
             try {
                 connection.requestMethod = "GET"
@@ -769,11 +771,13 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
         )
     }
 
-    private fun waitForRequestSlot(search: Boolean) {
+    private fun waitForRequestSlot(search: Boolean, continuation: Boolean = false) {
         val now = SystemClock.elapsedRealtime()
         val remaining = pacing.remainingCooldownMs(now)
         if (remaining > 0L) throw rateLimitFailure(remaining)
-        val delay = pacing.delayMs(now, search)
+        // Only independent searches wait for the search interval. A redirect or
+        // browser continuation is still counted as traffic and updates the last search.
+        val delay = pacing.delayMs(now, search, continuation)
         if (delay > 0L) Thread.sleep(delay)
         pacing.markStarted(SystemClock.elapsedRealtime(), search)
     }

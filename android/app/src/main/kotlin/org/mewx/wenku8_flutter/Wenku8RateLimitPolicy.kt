@@ -14,12 +14,15 @@ internal object Wenku8RateLimitPolicy {
 
 /** Accessed by the serialized official request worker, using monotonic milliseconds. */
 internal class Wenku8RequestPacing {
-    private var lastStartedAt: Long? = null
+    private val recentStarts = ArrayDeque<Long>(3)
     private var lastSearchAt: Long? = null
     private var blockedUntil = 0L
+    private var guardedUntil = 0L
 
     fun recordRateLimit(now: Long) {
         blockedUntil = maxOf(blockedUntil, now + 15 * 60_000L)
+        guardedUntil = blockedUntil + 2 * 60_000L
+        recentStarts.clear()
     }
 
     fun remainingCooldownMs(now: Long): Long = (blockedUntil - now).coerceAtLeast(0L)

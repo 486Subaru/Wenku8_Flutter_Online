@@ -288,7 +288,10 @@ class WenkuAccount extends ChangeNotifier {
     final url = '${base}modules/article/reviewshow.php?rid=$threadId';
     final source = html.parse(await LegacyTransport.getText(url));
     final form = source.querySelector('form[action*="reviewshow.php"]');
-    final action = Uri.parse(url).resolve(form?.attributes['action'] ?? '');
+    if (form == null || form.querySelector('textarea[name="pcontent"]') == null) {
+      throw const FormatException('官网没有提供可用的回复表单，请先在官网确认');
+    }
+    final action = Uri.parse(url).resolve(form.attributes['action'] ?? '');
     final aid = int.tryParse(action.queryParameters['aid'] ?? '') ?? 0;
     final endpoint = '$url${aid > 0 ? '&aid=$aid' : ''}';
     await LegacyTransport.officialAction(endpoint, content: content.trim());

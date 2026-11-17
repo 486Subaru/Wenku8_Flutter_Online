@@ -31,7 +31,12 @@ jobs:
           flutter analyze --no-fatal-infos
           flutter test
       - name: Build release APKs
-        run: flutter build apk --release --split-per-abi --target-platform android-arm64,android-x64 --no-pub
+        run: |
+          mkdir -p "$RUNNER_TEMP/riqing-unsigned"
+          flutter build apk --release --target-platform android-arm64 --no-pub
+          cp build/app/outputs/flutter-apk/app-release.apk "$RUNNER_TEMP/riqing-unsigned/arm64-v8a.apk"
+          flutter build apk --release --target-platform android-x64 --no-pub
+          cp build/app/outputs/flutter-apk/app-release.apk "$RUNNER_TEMP/riqing-unsigned/x86_64.apk"
       - name: Test Android networking and installation policies
         run: cd android && ./gradlew :app:testDebugUnitTest --no-daemon
       - name: Sign and verify the release APKs

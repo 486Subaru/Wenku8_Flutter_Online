@@ -35,10 +35,16 @@ const _stability =
 const _updateChannel =
     'v2286 修复应用内更新通道：日轻不再检查原版 mikufoxxx/Wenku8_Flutter 的 Release，也不再使用原版更新镜像；更新只认 486Subaru/Wenku8_Flutter_Online 自己的 GitHub Release。仓库或 Release 尚未公开时，匿名更新检查会表现为暂无可用更新，而不会再弹出原版更新提示。';
 const _build =
-    '应用名称为「日轻」，当前版本为 0.5.5 · 联网增强版 v2286。Android 使用独立 applicationId，与原版安装互不覆盖；本次构建面向 ARM64 Android 设备。';
+    '应用名称为「日轻」，当前版本为 0.5.6 · v2287。Android 使用独立 applicationId，与原版安装互不覆盖；本次构建面向 ARM64 Android 设备。';
 
 const publicReleaseNotes = '''
-# 日轻 0.5.5 联网增强版 · v2286
+# 日轻 0.5.6 · v2287
+
+## 插图与联网修复
+
+- 识别文库的独立插图章、原图链接和现用图片服务器。
+- 图片使用独立请求队列，降低对正文、目录和搜索的影响。
+- 正式 Android 版启用固定发布签名。旧版用户可导出阅读备份后安装，再在新版恢复。
 
 $releaseFreeNotice
 

@@ -1,0 +1,85 @@
+name: Build signed Riqing Android release
+
+on:
+  push:
+    branches: ['release/riqing-*']
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 32
+    environment: riqing-android-signing
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.9'
+          cache: true
+      - name: Analyze and test Flutter
+        run: |
+          flutter pub get
+          flutter analyze --no-fatal-infos
+          flutter test
+      - name: Build release APKs
+        run: flutter build apk --release --split-per-abi --target-platform android-arm64,android-x64 --no-pub
+      - name: Test Android networking and installation policies
+        run: cd android && ./gradlew :app:testDebugUnitTest --no-daemon
+      - name: Sign and verify the release APKs
+        env:
+          RIQING_RELEASE_KEYSTORE: ${{ secrets.RIQING_RELEASE_KEYSTORE }}
+          RIQING_RELEASE_PASSWORD: ${{ secrets.RIQING_RELEASE_PASSWORD }}
+        run: bash tool/riqing_sign_release.sh
+      - name: Enable KVM
+        run: |
+          test -e /dev/kvm
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Test the signed package on Android 14
+        uses: reactivecircus/android-emulator-runner@4c44018e59b437e86cdfc41da381398f93ed8808
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: bash tool/riqing_release_smoke.sh
+      - name: Upload verified ARM64 package
+        uses: actions/upload-artifact@v4
+        with:
+          name: riqing-signed-arm64
+          path: build/signed-release/arm64-v8a.apk
+          if-no-files-found: error
+          retention-days: 14
+  draft:
+    needs: android
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: riqing-signed-arm64
+          path: build/signed-release
+      - name: Stage the checked APK as a draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(sed -nE 's/^version: ([0-9]+\.[0-9]+\.[0-9]+\+[0-9]+)$/\1/p' pubspec.yaml)"
+          test -n "$version"
+          cp build/signed-release/arm64-v8a.apk "$RUNNER_TEMP/日轻.apk"
+          gh release create "v$version" --draft --target "$GITHUB_SHA" \
+            --title "日轻 $version" --notes-file tool/riqing_release_notes.md "$RUNNER_TEMP/日轻.apk#日轻.apk"

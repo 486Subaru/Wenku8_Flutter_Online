@@ -30,11 +30,11 @@ android {
 
     defaultConfig {
         // Public source previews must not replace an installed distribution.
-        applicationId = "org.mewx.wenku8_flutter.online.fix"
+        applicationId = "org.mewx.wenku8_flutter.online.riqing"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
-        versionName = "0.5.5"
+        versionName = flutter.versionName
         manifestPlaceholders["wenkuAppLabel"] = "日轻"
         // AGP otherwise builds upstream desktop utilities too, including the
         // DRM tool whose encryption code is intentionally disabled in this app.

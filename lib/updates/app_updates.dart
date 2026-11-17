@@ -15,8 +15,8 @@ export 'current_release_content.dart'
 const officialUpdateRepository = '486Subaru/Wenku8_Flutter_Online';
 const updateMirrorOrigin = 'https://git.3952039.xyz';
 const updateRepository = officialUpdateRepository;
-const currentAppVersion = '0.5.5';
-const currentAppBuild = 2286;
+const currentAppVersion = '0.5.6';
+const currentAppBuild = 2287;
 
 class ReleaseVersion implements Comparable<ReleaseVersion> {
   const ReleaseVersion(this.major, this.minor, this.patch, [this.build = 0]);
@@ -113,7 +113,8 @@ class AppRelease {
       final url = Uri.tryParse(raw['browser_download_url']?.toString() ?? '');
       final size = raw['size'];
       if (name is! String ||
-          !name.startsWith('riqing-${version.name}-') ||
+          !(name.startsWith('riqing-${version.name}-') ||
+              name.startsWith('riqing-android-${version.name}-')) ||
           !const ['.apk', '.ipa', '.hap'].any(name.endsWith) ||
           url == null ||
           url.scheme != 'https' ||

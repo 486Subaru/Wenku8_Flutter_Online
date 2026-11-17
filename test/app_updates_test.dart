@@ -23,7 +23,8 @@ void main() {
 
   test('Riqing update channel is pinned to the derivative repository', () {
     expect(updateRepository, repository);
-    expect(currentAppBuild, 2286);
+    expect(currentAppVersion, '0.5.6');
+    expect(currentAppBuild, 2287);
   });
 
   test('accepts Riqing ARM64 release assets', () {
@@ -35,6 +36,26 @@ void main() {
     expect(release!.assets, hasLength(1));
     expect(release.assetFor(const ['arm64-v8a'])?.name,
         'riqing-0.5.5-arm64-v8a.apk');
+  });
+
+  test('recognizes upgrade assets for the signed Android distribution', () {
+    const name = 'riqing-android-0.5.5-arm64-v8a.apk';
+    final release = AppRelease.fromGithub(releaseJson(name), repository);
+    expect(release?.assetFor(const ['arm64-v8a'])?.name, name);
+  });
+
+  test('shows a release notice without offering a manual APK in-app', () {
+    final release = AppRelease.fromGithub(
+      releaseJson('riqing-0.5.5-manual.apk'),
+      repository,
+    );
+    const installed = InstalledApp(
+      version: '0.5.5',
+      build: 2286,
+      abis: ['arm64-v8a'],
+    );
+    expect(release!.isNewerThan(installed), isTrue);
+    expect(release.assetFor(installed.abis), isNull);
   });
 
   test('rejects upstream Wenku8 package names', () {

@@ -177,6 +177,26 @@ void main() {
       expect(marked, isNot(contains('outside.example')));
     });
 
+    test('reads the live Wenku8 chapter illustration CDN format', () async {
+      const original = 'https://pic.777743.xyz/3/3057/125425/165677.jpg';
+      const gosick = 'https://pic.777743.xyz/0/144/24281/10065.jpg';
+      const sky = 'https://pic.777743.xyz/4/4265/175409/216243.jpg';
+      final chapter = Wenku8HtmlParser.parseChapterBody(
+        '<div id="content">'
+        '<div class="divimage"><a href="$original"><img src="$original"></a></div>'
+        '<p>正文样例<img src="$gosick"></p>'
+        '<div class="divimage"><a href="$sky"></a></div>'
+        '<img src="https://pic.777743.xyz/other/165678.jpg">'
+        '<img src="https://pic.777743.xyz/3/3057/125425/165678.jpg?x=1">'
+        '<img src="https://pic.777743.xyz.example/3/3057/125425/165678.jpg">'
+        '</div>',
+        'https://www.wenku8.cc/novel/3/3057/125425.htm',
+      );
+      final content = await ReaderContent.parse(chapter);
+      expect(content.illustrations, [original, gosick, sky]);
+      expect(chapter, contains('正文样例'));
+    });
+
     test('an unreadable gallery gets an illustration error, not empty text', () {
       expect(
         () => Wenku8HtmlParser.parseChapterBody(

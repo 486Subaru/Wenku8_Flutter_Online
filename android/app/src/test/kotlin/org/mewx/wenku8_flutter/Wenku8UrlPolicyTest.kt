@@ -113,6 +113,11 @@ class Wenku8UrlPolicyTest {
     fun acceptsOnlyKnownImageHostsAndImagePaths() {
         assertTrue(Wenku8UrlPolicy.isAllowedImage("https://img.wenku8.com/image/4/4265/4265s.jpg"))
         assertTrue(Wenku8UrlPolicy.isCdnImage("https://img.wenku8.com/image/4/4265/4265s.jpg"))
+        assertTrue(Wenku8UrlPolicy.isCdnImage("https://pic.777743.xyz/3/3057/125425/165677.jpg"))
+        assertFalse(Wenku8UrlPolicy.isAllowedImage("https://pic.777743.xyz/other/165677.jpg"))
+        assertFalse(Wenku8UrlPolicy.isAllowedImage("https://pic.777743.xyz/3/3057/125425/165677.jpg?x=1"))
+        assertFalse(Wenku8UrlPolicy.isAllowedImage("https://pic.777743.xyz.example/3/3057/125425/165677.jpg"))
+        assertFalse(Wenku8UrlPolicy.isAllowedImage("http://pic.777743.xyz/3/3057/125425/165677.jpg"))
         assertFalse(Wenku8UrlPolicy.isCdnImage("https://www.wenku8.cc/pictures/4/4265/1001/1.jpg"))
         assertFalse(Wenku8UrlPolicy.isCdnImage("https://img.wenku8.com/image/4/4265/4265s.jpg?extra=1"))
         assertFalse(Wenku8UrlPolicy.isCdnImage("https://evil.example/image/4/4265/4265s.jpg"))

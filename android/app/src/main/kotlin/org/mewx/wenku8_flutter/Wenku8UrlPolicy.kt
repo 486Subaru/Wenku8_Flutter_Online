@@ -16,6 +16,12 @@ internal object Wenku8UrlPolicy {
         RegexOption.IGNORE_CASE,
     )
 
+    private const val chapterImageHost = "pic.777743.xyz"
+    private val chapterImagePath = Regex(
+        """/\d+/\d+/\d+/\d+\.(?:jpe?g|png|gif|webp)""",
+        RegexOption.IGNORE_CASE,
+    )
+
     private fun isAllowedSourceHttpsUrl(raw: String, baseUrl: String, allowedHosts: List<String>): Boolean {
         val uri = parse(raw) ?: return false
         val base = parse(baseUrl) ?: return false
@@ -105,8 +111,10 @@ internal object Wenku8UrlPolicy {
                 path.startsWith("/turnstile/"))
     }
 
-    fun isCdnImage(raw: String): Boolean =
-        parse(raw)?.host?.lowercase() in imageHosts && isAllowedImage(raw)
+    fun isCdnImage(raw: String): Boolean {
+        val host = parse(raw)?.host?.lowercase()
+        return (host in imageHosts || host == chapterImageHost) && isAllowedImage(raw)
+    }
 
     fun isAllowedImage(raw: String): Boolean {
         val uri = parse(raw) ?: return false
@@ -120,8 +128,9 @@ internal object Wenku8UrlPolicy {
                 """^/(?:pictures|illustrations)/[A-Za-z0-9_./-]+\.(?:jpe?g|png|gif|webp)$""",
                 RegexOption.IGNORE_CASE,
             ).matches(path)
+        val chapterImage = host == chapterImageHost && chapterImagePath.matches(path)
         return uri.scheme.equals("https", ignoreCase = true) &&
-            (knownImageHost || officialIllustration) &&
+            (knownImageHost || officialIllustration || chapterImage) &&
             uri.userInfo == null &&
             (uri.port == -1 || uri.port == 443) &&
             uri.rawQuery == null &&

@@ -22,6 +22,11 @@ abstract final class Wenku8HtmlParser {
     'pic.wenku8.cn',
     'pic.wenku8.net',
   };
+  static const _chapterImageHost = 'pic.777743.xyz';
+  static final _chapterImagePath = RegExp(
+    r'^/\d+/\d+/\d+/\d+\.(?:jpe?g|png|gif|webp)$',
+    caseSensitive: false,
+  );
   static const _palettes = <List<Color>>[
     [Color(0xFF6D89A9), Color(0xFF263A58)],
     [Color(0xFFB37C80), Color(0xFF593D57)],
@@ -533,8 +538,10 @@ abstract final class Wenku8HtmlParser {
           r'^/(?:pictures|illustrations)/[A-Za-z0-9_./-]+\.(?:jpe?g|png|gif|webp)$',
           caseSensitive: false,
         ).hasMatch(resolved.path);
+    final chapterImage = resolved.host == _chapterImageHost &&
+        _chapterImagePath.hasMatch(resolved.path);
     if (resolved.scheme != 'https' ||
-        !(imageHost || officialPicture) ||
+        !(imageHost || officialPicture || chapterImage) ||
         resolved.userInfo.isNotEmpty ||
         resolved.hasPort && resolved.port != 443 ||
         resolved.hasQuery ||

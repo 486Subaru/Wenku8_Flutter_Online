@@ -1,0 +1,33 @@
+name: Audit APK in-place upgrade compatibility
+
+on:
+  push:
+    branches: ['audit/apk-upgrade-compatibility-2286']
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: 486Subaru/Wenku8_Flutter_Online
+    steps:
+      - name: Inspect published APK package IDs, versions, and signing certs
+        shell: bash
+        run: |
+          set -euo pipefail
+          TOOLS="$(find "$ANDROID_HOME/build-tools" -maxdepth 1 -mindepth 1 -type d | sort -V | tail -n1)"
+          test -x "$TOOLS/apksigner"
+          test -x "$TOOLS/aapt"
+          for TAG in riqing-v0.5.5-2286 riqing-v0.5.5-2286-search-fix riqing-v0.5.5-2286-1015-reviews-fix; do
+            mkdir -p "$TAG"
+            gh release download "$TAG" --repo "$GH_REPO" --pattern 'riqing-0.5.5-arm64-v8a.apk' --dir "$TAG"
+            APK="$TAG/riqing-0.5.5-arm64-v8a.apk"
+            printf '\n=== %s ===\n' "$TAG"
+            "$TOOLS/aapt" dump badging "$APK" | grep '^package:' | head -1
+            "$TOOLS/apksigner" verify --print-certs --verbose "$APK" | grep -E 'Signer #1 certificate SHA-256 digest|Verified using v[123] scheme'
+            sha256sum "$APK"
+          done

@@ -8,6 +8,7 @@ import 'package:wenku8_flutter/catalog.dart';
 import 'package:wenku8_flutter/legacy_transport.dart';
 import 'package:wenku8_flutter/legacy_wenku_repository.dart';
 import 'package:wenku8_flutter/online_component.dart';
+import 'package:wenku8_flutter/novel_feed_controller.dart';
 import 'package:wenku8_flutter/wenku_reviews.dart';
 
 void emit(String name, Map<String, Object?> data) {
@@ -65,8 +66,44 @@ Future<int> nativeChecks() async {
   return failures;
 }
 
+Future<Map<String, Object?>> replaySearchPagination() async {
+  final requests = <String>[];
+  var fail = true;
+  final repo = LegacyWenkuRepository(
+    searchRequest: (_, {field = 'articlename', page = 1}) async {
+      requests.add('$field:$page');
+      if (field == 'articlename' && page == 2 && fail) {
+        throw OnlineRateLimited('官网 Cloudflare 1015 限流');
+      }
+      final id = field == 'author' ? 21 : page + 10;
+      final pages = field == 'author' ? 1 : 3;
+      return '<div id="content"><a href="/book/$id.htm">测试作品 $id</a></div>'
+          '<div id="pagestats">$page/$pages</div>';
+    },
+  );
+  final feed = NovelFeedController(repo, search: true);
+  try {
+    await feed.searchFor('安卓回放');
+    await feed.loadMore();
+    final retained = feed.items.length == 2 && feed.searchRateLimit != null;
+    fail = false;
+    await feed.retry();
+    final passed = retained &&
+        feed.items.length == 3 &&
+        feed.page == 2 &&
+        feed.hasMore &&
+        feed.searchNotice == null &&
+        requests.join(',') == 'articlename:1,author:1,articlename:2,articlename:2';
+    return {'status': passed ? 'ok' : 'unexpected', 'requests': requests, 'books': feed.items.length};
+  } finally {
+    feed.dispose();
+  }
+}
+
 Future<void> runProbe() async {
-  final failures = await nativeChecks();
+  var failures = await nativeChecks();
+  final replay = await runCase('search_retry_replay', replaySearchPagination, (value) => value);
+  if (replay?['status'] != 'ok') failures++;
   final repo = LegacyWenkuRepository();
   final list = await runCase('discovery', () => repo.browse(), pageSummary);
   final timer = Stopwatch()..start();

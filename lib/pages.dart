@@ -158,6 +158,7 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
   late List<int> _visibleTabs;
   final _visitedTabs = <int>{};
   bool _catalogStarted = false;
+  bool _catalogNeedsRefresh = false;
   static final _scrollPlatforms = TargetPlatform.values.toSet();
   late final _tabScrolls = [
     for (var i = 0; i < _dockItems.length; i++)
@@ -333,23 +334,22 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
 
   void _bookSourcesChanged() {
     if (!mounted) return;
-    // The repository reads the selected homepage source on every request.
-    // Refresh retained discovery/search results after a source or login change.
-    if (_catalogStarted) {
-      unawaited(_catalog.refresh());
-    } else {
-      _ensureCatalog();
-    }
+    // Defer discovery updates while search owns the foreground.
+    _catalogNeedsRefresh = _catalogStarted;
+    _ensureCatalog();
     if (_searchOpen && _searchScope == 0 && _searchFeed.query.isNotEmpty) {
       unawaited(_searchFeed.refresh());
     }
   }
 
   void _ensureCatalog() {
-    if (_tab != 0 || !_visibleTabs.contains(0)) return;
+    if (_searchOpen || _tab != 0 || !_visibleTabs.contains(0)) return;
     if (!_catalogStarted) {
       _catalogStarted = true;
       _catalog.loadInitial();
+    } else if (_catalogNeedsRefresh) {
+      _catalogNeedsRefresh = false;
+      unawaited(_catalog.refresh());
     } else if (_catalog.items.isEmpty && _catalog.error != null) {
       _catalog.retry();
     }
@@ -475,6 +475,9 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
     setState(() {
       _searchOpen = false;
       _searchCovered = false;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _ensureCatalog();
     });
     if (_reduceMotion) {
       _searchExpansion.value = 0;
@@ -4021,17 +4024,28 @@ class InlineSearchResults extends StatelessWidget {
     final features = WenkuFeaturesScope.maybeOf(context);
     final VoidCallback? loginAction = features == null
         ? null
-        : () => unawaited(
-            pushNovelPage<void>(
+        : () async {
+            final account = features.account;
+            final revision = account.sessionRevision;
+            final query = feed.query;
+            final field = feed.searchField;
+            await pushNovelPage<void>(
               context,
               WenkuAccountPage(
-                account: features.account,
+                account: account,
                 state: state,
                 repository: repository,
               ),
               reduceMotion: state.reduceMotion,
-            ),
-          );
+            );
+            if (context.mounted &&
+                account.sessionRevision != revision &&
+                account.authenticated &&
+                feed.query == query &&
+                feed.searchField == field) {
+              await feed.retry();
+            }
+          };
     if (books.isEmpty &&
         feed.query.isEmpty &&
         onRecall != null &&
@@ -4132,7 +4146,7 @@ class InlineSearchResults extends StatelessWidget {
         actionLabel: needsLogin && loginAction != null ? '登录 / 官网验证' : '重试',
         onRetry: needsLogin && loginAction != null
             ? loginAction
-            : feed.searchNotice == null ? null : feed.refresh,
+            : feed.searchNotice == null ? null : feed.retry,
       );
     }
     return NotificationListener<ScrollNotification>(
@@ -4222,7 +4236,7 @@ class InlineSearchResults extends StatelessWidget {
                                 ? null
                                 : needsLogin && loginAction != null
                                 ? loginAction
-                                : feed.refresh,
+                                : feed.retry,
                             child: AppText(needsLogin && loginAction != null
                                 ? '登录 / 官网验证' : '重试搜索'),
                           ),

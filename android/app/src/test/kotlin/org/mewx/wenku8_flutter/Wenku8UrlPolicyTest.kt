@@ -18,6 +18,21 @@ class Wenku8UrlPolicyTest {
     }
 
     @Test
+    fun acceptsOfficialOriginWithoutATrailingSlash() {
+        assertTrue(Wenku8UrlPolicy.isOfficialPage("https://www.wenku8.cc"))
+        assertFalse(Wenku8UrlPolicy.isOfficialPage("https://example.com"))
+    }
+
+    @Test
+    fun redirectDiagnosticOmitsCredentialsPathAndQuery() {
+        assertEquals(
+            "https://example.com",
+            Wenku8UrlPolicy.navigationOrigin("https://user:secret@example.com/private?token=value"),
+        )
+        assertEquals("about:", Wenku8UrlPolicy.navigationOrigin("about:blank"))
+    }
+
+    @Test
     fun upgradesOnlyLegacyHttpLinksOnTheOfficialHost() {
         assertEquals(
             "https://www.wenku8.cc/login.php?jumpurl=http%3A%2F%2Fwww.wenku8.cc%2Findex.php",

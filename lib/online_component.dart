@@ -6,16 +6,34 @@ class OnlineComponentUnavailable implements Exception {
   String toString() => message;
 }
 
-class OnlineAuthenticationRequired implements Exception {
-  const OnlineAuthenticationRequired();
+abstract class OnlineAccessRequired implements Exception {
+  const OnlineAccessRequired();
+  String get message;
   @override
-  String toString() => '请先登录轻小说文库账号';
+  String toString() => message;
 }
 
-class OnlineChallengeRequired implements Exception {
+class OnlineAuthenticationRequired extends OnlineAccessRequired {
+  const OnlineAuthenticationRequired();
+  @override
+  String get message => '请先登录轻小说文库账号';
+}
+
+class OnlineChallengeRequired extends OnlineAccessRequired {
   const OnlineChallengeRequired();
   @override
-  String toString() => '官网要求浏览器验证，请先完成官方网页登录验证后重试';
+  String get message => '官网要求浏览器验证，请先完成官方网页登录验证后重试';
+}
+
+class OnlineRedirectBlocked extends OnlineAccessRequired {
+  const OnlineRedirectBlocked({this.origin});
+  final String? origin;
+
+  @override
+  String get message {
+    final location = origin == null ? '' : '（$origin）';
+    return '官网跳转已被拦截$location。可打开文库官网确认访问状态后重试。';
+  }
 }
 
 class OnlinePageNotFound extends FormatException {

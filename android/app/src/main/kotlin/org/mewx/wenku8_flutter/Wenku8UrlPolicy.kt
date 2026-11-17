@@ -66,7 +66,7 @@ internal object Wenku8UrlPolicy {
             uri.host?.lowercase()?.let { it in officialHosts } == true &&
             uri.userInfo == null &&
             (uri.port == -1 || uri.port == 443) &&
-            uri.rawPath?.startsWith("/") == true
+            uri.rawPath?.let { it.isEmpty() || it.startsWith("/") } == true
     }
 
     /**
@@ -124,6 +124,13 @@ internal object Wenku8UrlPolicy {
             uri.rawQuery == null &&
             uri.rawFragment == null &&
             path.split('/').none { it == ".." }
+    }
+
+    /** Diagnostics omit credentials, ports, paths, query parameters and fragments. */
+    fun navigationOrigin(raw: String): String? {
+        val uri = parse(raw) ?: return null
+        val scheme = uri.scheme?.lowercase() ?: return null
+        return uri.host?.lowercase()?.let { "$scheme://$it" } ?: "$scheme:"
     }
 
     private fun parse(raw: String): URI? =

@@ -4011,8 +4011,13 @@ class InlineSearchResults extends StatelessWidget {
   Widget _buildResults(BuildContext context) {
     final books = feed.items;
     final failure = feed.error;
-    final needsLogin = failure is OnlineAuthenticationRequired ||
-        failure is OnlineChallengeRequired;
+    final accessGate = feed.searchAccessRequired;
+    final needsLogin = accessGate != null;
+    final accessTitle = switch (accessGate) {
+      OnlineChallengeRequired() => '需要完成官网验证',
+      OnlineRedirectBlocked() => '官网跳转受限',
+      _ => '需要连接文库账号',
+    };
     final features = WenkuFeaturesScope.maybeOf(context);
     final VoidCallback? loginAction = features == null
         ? null
@@ -4077,9 +4082,7 @@ class InlineSearchResults extends StatelessWidget {
         title: failure is OnlineRateLimited
             ? '官网访问限流'
             : needsLogin
-            ? failure is OnlineChallengeRequired
-                  ? '需要完成官网验证'
-                  : '需要连接文库账号'
+            ? accessTitle
             : '搜索失败，请稍后重试',
         message: feed.failureMessage,
         actionLabel: needsLogin && loginAction != null
@@ -4120,11 +4123,16 @@ class InlineSearchResults extends StatelessWidget {
         icon: CupertinoIcons.search,
         title: feed.searchRateLimit != null
             ? '官网访问限流'
+            : needsLogin
+            ? accessTitle
             : feed.searchNotice == null
             ? '没有找到相关故事'
             : '部分搜索暂未完成',
         message: feed.searchNotice ?? '试试更短的书名或作者名',
-        onRetry: feed.searchNotice == null ? null : feed.refresh,
+        actionLabel: needsLogin && loginAction != null ? '登录 / 官网验证' : '重试',
+        onRetry: needsLogin && loginAction != null
+            ? loginAction
+            : feed.searchNotice == null ? null : feed.refresh,
       );
     }
     return NotificationListener<ScrollNotification>(
@@ -4210,8 +4218,13 @@ class InlineSearchResults extends StatelessWidget {
                         Align(
                           alignment: Alignment.centerLeft,
                           child: GlassTextButton(
-                            onPressed: feed.loading ? null : feed.refresh,
-                            child: const AppText('重试搜索'),
+                            onPressed: feed.loading
+                                ? null
+                                : needsLogin && loginAction != null
+                                ? loginAction
+                                : feed.refresh,
+                            child: AppText(needsLogin && loginAction != null
+                                ? '登录 / 官网验证' : '重试搜索'),
                           ),
                         ),
                       ],

@@ -21,8 +21,14 @@ abstract final class LegacyTransport {
     if (failure.code == 'WEB_LOGIN_REQUIRED') {
       throw const OnlineAuthenticationRequired();
     }
-    if (failure.code == 'WEB_CHALLENGE') {
+    if (failure.code == 'WEB_CHALLENGE' ||
+        failure.code == 'WEB_VERIFICATION_REQUIRED') {
       throw const OnlineChallengeRequired();
+    }
+    if (failure.code == 'WEB_REDIRECT_BLOCKED') {
+      final details = failure.details;
+      final origin = details is Map ? details['origin'] : null;
+      throw OnlineRedirectBlocked(origin: origin is String ? origin : null);
     }
     if (failure.code == 'WEB_NOT_FOUND') {
       throw const OnlinePageNotFound();

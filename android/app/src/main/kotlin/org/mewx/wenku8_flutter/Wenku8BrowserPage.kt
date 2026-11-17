@@ -24,7 +24,7 @@ import java.util.concurrent.atomic.AtomicReference
  */
 internal object Wenku8BrowserPage {
     data class Page(val html: String, val url: String)
-    class Failure(val code: String, message: String) : Exception(message)
+    class Failure(val code: String, message: String, val origin: String? = null) : Exception(message)
 
     fun read(context: Context, url: String, referer: String?, maxBytes: Int, form: ByteArray? = null): Page {
         check(Looper.myLooper() != Looper.getMainLooper())
@@ -70,25 +70,46 @@ internal object Wenku8BrowserPage {
                 }
                 CookieManager.getInstance().setAcceptCookie(true)
                 CookieManager.getInstance().setAcceptThirdPartyCookies(view, false)
+                val headers = if (referer != null && Wenku8UrlPolicy.isOfficialPage(referer)) {
+                    mapOf("Referer" to referer)
+                } else emptyMap()
                 view.webViewClient = object : WebViewClient() {
                     private var httpStatus = 200
                     private var mitigated: String? = null
+                    private var upgrades = 0
+
+                    private fun handleMainFrame(view: WebView, target: String, canUpgrade: Boolean): Boolean {
+                        if (Wenku8UrlPolicy.isOfficialPage(target)) return false
+                        if (Wenku8UrlPolicy.isAllowedChallengeUrl(target)) {
+                            finish(failure = Failure("WEB_CHALLENGE", "请在可见官网页面完成验证"))
+                            return true
+                        }
+                        val upgraded = Wenku8UrlPolicy.httpsUpgradeOfficialPage(target)
+                        if (form == null && canUpgrade && upgraded != null && upgrades < 4) {
+                            upgrades++
+                            view.stopLoading()
+                            view.loadUrl(upgraded, headers)
+                            return true
+                        }
+                        finish(failure = Failure(
+                            "WEB_REDIRECT_BLOCKED",
+                            "官网浏览器请求跳转到非允许的地址",
+                            Wenku8UrlPolicy.navigationOrigin(target),
+                        ))
+                        return true
+                    }
 
                     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                         if (!request.isForMainFrame) {
                             return request.url.scheme != "https"
                         }
-                        if (Wenku8UrlPolicy.isOfficialPage(request.url.toString())) return false
-                        finish(failure = Failure("WEB_REDIRECT_BLOCKED", "官网浏览器请求跳转到非允许的地址"))
-                        return true
+                        return handleMainFrame(view, request.url.toString(), request.method == "GET")
                     }
 
                     override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
                         httpStatus = 200
                         mitigated = null
-                        if (!Wenku8UrlPolicy.isOfficialPage(url.orEmpty())) {
-                            finish(failure = Failure("WEB_REDIRECT_BLOCKED", "官网浏览器请求跳转到非允许的地址"))
-                        }
+                        if (url != null) handleMainFrame(view, url, canUpgrade = true)
                     }
 
                     override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
@@ -137,9 +158,6 @@ internal object Wenku8BrowserPage {
                         }
                     }
                 }
-                val headers = if (referer != null && Wenku8UrlPolicy.isOfficialPage(referer)) {
-                    mapOf("Referer" to referer)
-                } else emptyMap()
                 if (form == null) view.loadUrl(url, headers)
                 else view.postUrl(url, form)
             } catch (_: Exception) {

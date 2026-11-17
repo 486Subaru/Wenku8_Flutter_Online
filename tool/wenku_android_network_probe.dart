@@ -19,6 +19,8 @@ Map<String, Object?> classify(Object error) => {
   if (error is PlatformException) 'code': error.code,
   if (error is OnlineRateLimited) 'retryAfterSeconds': error.retryAfterSeconds,
   if (error is FormatException) 'message': error.message,
+  if (error is OnlineAccessRequired) 'message': error.message,
+  if (error is OnlineRedirectBlocked) 'origin': error.origin,
 };
 
 Future<T?> runCase<T>(String name, Future<T> Function() run, Map<String, Object?> Function(T) summarize) async {

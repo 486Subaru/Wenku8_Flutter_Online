@@ -386,7 +386,11 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
             if (failure.code == "WEB_RATE_LIMITED") {
                 recordRateLimit(failure.message ?: "官网请求过于频繁")
             }
-            throw WebFailure(failure.code, failure.message ?: "官网浏览器请求失败")
+            throw WebFailure(
+                failure.code,
+                failure.message ?: "官网浏览器请求失败",
+                failure.origin?.let { mapOf("origin" to it) },
+            )
         }
     }
 
@@ -440,7 +444,19 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
                     val next = runCatching { URL(current, location) }
                         .getOrElse { throw WebFailure("WEB_REDIRECT_ERROR", "官网返回了无效跳转") }
                     if (!allowed(next, image)) {
-                        throw WebFailure("WEB_REDIRECT_BLOCKED", "官网跳转到了非允许域名，已阻止该请求")
+                        if (!image && Wenku8UrlPolicy.isAllowedChallengeUrl(next.toString())) {
+                            throw WebFailure("WEB_VERIFICATION_REQUIRED", "请在可见官网页面完成验证")
+                        }
+                        val upgraded = if (image) null else Wenku8UrlPolicy.httpsUpgradeOfficialPage(next.toString())
+                        if (upgraded != null) {
+                            current = URL(upgraded)
+                            continue
+                        }
+                        throw WebFailure(
+                            "WEB_REDIRECT_BLOCKED",
+                            "官网跳转到了非允许域名，已阻止该请求",
+                            Wenku8UrlPolicy.navigationOrigin(next.toString())?.let { mapOf("origin" to it) },
+                        )
                     }
                     current = next
                     continue

@@ -3,6 +3,7 @@ package org.mewx.wenku8_flutter
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
@@ -48,9 +49,9 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
         val textSemaphore: Semaphore = Semaphore(1),
         val lastRequestAt: AtomicLong = AtomicLong(0L),
     )
-    private class RequestRate {
-        val pacing = Wenku8RequestPacing()
-        var reason = "官网访问限流"
+    private class RequestRate(val key: String, minimumIntervalMs: Long = 900L) {
+        val pacing = Wenku8RequestPacing(minimumIntervalMs)
+        @Volatile var reason = "官网访问限流"
     }
 
     private class ImageRedirect(val url: String, val remainingHops: Int) : RuntimeException()
@@ -82,8 +83,9 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
     private var activityBinding: ActivityPluginBinding? = null
     private var pendingLogin: MethodChannel.Result? = null
     private var pendingSourceLogin: MethodChannel.Result? = null
-    private val webRate = RequestRate()
-    private val cdnRate = RequestRate()
+    private val webRate = RequestRate("website")
+    private val cdnRate = RequestRate("static_images", minimumIntervalMs = 3_500L)
+    private lateinit var cooldownPreferences: SharedPreferences
     private lateinit var appContext: Context
     private var preferBrowserUntil = 0L
     private var userAgent = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
@@ -92,6 +94,9 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
         val context = binding.applicationContext
         appContext = context
         Wenku8SessionCookies.initialize(context)
+        cooldownPreferences = context.getSharedPreferences("wenku8_request_cooldown", Context.MODE_PRIVATE)
+        restoreCooldown(webRate)
+        restoreCooldown(cdnRate)
         userAgent = runCatching { WebSettings.getDefaultUserAgent(context) }.getOrDefault(userAgent)
         channel = MethodChannel(binding.binaryMessenger, CHANNEL).also {
             it.setMethodCallHandler(this)
@@ -827,12 +832,26 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
         if (image) Wenku8UrlPolicy.isAllowedImage(url.toString())
         else Wenku8UrlPolicy.isOfficialPage(url.toString())
 
+    private fun restoreCooldown(rate: RequestRate) {
+        val expiresAt = cooldownPreferences.getLong("${rate.key}_expires", 0L)
+        val clock = SystemClock.elapsedRealtime()
+        rate.pacing.restoreCooldown(clock, System.currentTimeMillis(), expiresAt)
+        if (rate.pacing.remainingCooldownMs(clock) > 0L) {
+            rate.reason = cooldownPreferences.getString("${rate.key}_reason", null) ?: rate.reason
+        }
+    }
+
     private fun recordRateLimit(reason: String, rate: RequestRate = webRate): Nothing {
         rate.reason = reason
         if (rate === webRate) preferBrowserUntil = 0L
         val now = SystemClock.elapsedRealtime()
         rate.pacing.recordRateLimit(now)
-        throw rateLimitFailure(rate, rate.pacing.remainingCooldownMs(now))
+        val remaining = rate.pacing.remainingCooldownMs(now)
+        cooldownPreferences.edit()
+            .putLong("${rate.key}_expires", System.currentTimeMillis() + remaining)
+            .putString("${rate.key}_reason", reason)
+            .commit()
+        throw rateLimitFailure(rate, remaining)
     }
 
     private fun rateLimitFailure(rate: RequestRate, remaining: Long): WebFailure {
@@ -855,11 +874,19 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
         val now = SystemClock.elapsedRealtime()
         val remaining = pacing.remainingCooldownMs(now)
         if (remaining > 0L) throw rateLimitFailure(rate, remaining)
+        checkWebsiteCooldownForImage(rate)
         // Only independent searches wait for the search interval. A redirect or
         // browser continuation is still counted as traffic and updates the last search.
         val delay = pacing.delayMs(now, search, continuation)
         if (delay > 0L) Thread.sleep(delay)
+        checkWebsiteCooldownForImage(rate)
         pacing.markStarted(SystemClock.elapsedRealtime(), search)
+    }
+
+    private fun checkWebsiteCooldownForImage(rate: RequestRate) {
+        if (rate !== cdnRate) return
+        val remaining = webRate.pacing.remainingCooldownMs(SystemClock.elapsedRealtime())
+        if (remaining > 0L) throw rateLimitFailure(webRate, remaining)
     }
 
     private fun readBounded(input: java.io.InputStream, limit: Int): ByteArray {

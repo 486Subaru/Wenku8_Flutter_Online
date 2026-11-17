@@ -52,7 +52,7 @@ void main() {
     print('WENKU_REPLAY single modes: 20 + 20 distinct titles; 5 author matches');
   });
 
-  test('combined search shows title first, but repeats an exhausted author field on page two', () async {
+  test('combined search shows title first, and skips an exhausted author field on page two', () async {
     final queries = <String>[];
     final author = Completer<String>();
     final repo = LegacyWenkuRepository(
@@ -78,11 +78,11 @@ void main() {
     await feed.loadMore();
     expect(feed.items, hasLength(45));
     expect(feed.hasMore, isTrue);
-    expect(queries, ['articlename:1', 'author:1', 'articlename:2', 'author:2']);
-    print('WENKU_REPLAY combined: title visible before author; requests=$queries; page 2 author field was already exhausted');
+    expect(queries, ['articlename:1', 'author:1', 'articlename:2']);
+    print('WENKU_REPLAY combined: title visible before author; requests=$queries; only unfinished title field requested on page 2');
   });
 
-  test('a rate-limited later page retains old books but full refresh repeats the first page', () async {
+  test('a rate-limited later page retains old books but retry resumes it without replaying successful pages', () async {
     final queries = <String>[];
     var failNextPage = true;
     final repo = LegacyWenkuRepository(
@@ -104,10 +104,10 @@ void main() {
     expect(queries, ['articlename:1', 'author:1', 'articlename:2']);
 
     failNextPage = false;
-    await feed.refresh();
+    await feed.retry();
     expect(feed.items, hasLength(40));
     expect(feed.searchNotice, isNull);
-    expect(queries.skip(3), ['articlename:1', 'author:1', 'articlename:2', 'author:2']);
-    print('WENKU_REPLAY retry: initial page kept; refresh requests=${queries.skip(3).join(",")}');
+    expect(queries.skip(3), ['articlename:2']);
+    print('WENKU_REPLAY retry: initial page kept; retry requests=${queries.skip(3).join(",")}');
   });
 }

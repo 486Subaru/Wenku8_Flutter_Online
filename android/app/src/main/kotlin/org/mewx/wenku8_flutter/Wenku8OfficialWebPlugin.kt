@@ -70,6 +70,7 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
     private var pendingSourceLogin: MethodChannel.Result? = null
     private var lastRequestAt = 0L
     private var lastSearchAt = 0L
+    @Volatile private var blockedUntil = 0L
     private lateinit var appContext: Context
     private var preferBrowser = false
     private var userAgent = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
@@ -345,7 +346,8 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
                 val reply = request(url, routedReferer, MAX_TEXT_BYTES, image = false)
                 return decode(reply.bytes, reply.contentType)
             } catch (failure: WebFailure) {
-                if (failure.code !in setOf("WEB_CHALLENGE", "WEB_BLOCKED")) throw failure
+                // A refusal is not a challenge to replay through another client.
+                if (failure.code != "WEB_CHALLENGE") throw failure
                 preferBrowser = true
             }
         }
@@ -353,6 +355,7 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
         val reply = try {
             Wenku8BrowserPage.read(appContext, url, routedReferer, MAX_TEXT_BYTES)
         } catch (failure: Wenku8BrowserPage.Failure) {
+            if (failure.code == "WEB_RATE_LIMITED") recordRateLimit()
             throw WebFailure(failure.code, failure.message ?: "官网浏览器请求失败")
         }
         if (looksLikeLoginPage(reply.html, URL(reply.url))) {
@@ -425,6 +428,10 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
                 val challenge = !image && Wenku8ChallengePolicy.isChallenge(
                     body, connection.getHeaderField("cf-mitigated"),
                 )
+                if (!image && Wenku8RateLimitPolicy.isRateLimited(status, body)) {
+                    recordRateLimit()
+                    throw WebFailure("WEB_RATE_LIMITED", "官网 Cloudflare 1015 限流；已暂停本机官网请求，请等待恢复")
+                }
                 if (challenge) {
                     throw WebFailure("WEB_CHALLENGE", "官网仍要求浏览器验证；请在官网完成验证后重试")
                 }
@@ -434,7 +441,10 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
                 if (status == 403) {
                     throw WebFailure("WEB_BLOCKED", "官网拒绝了应用的网络请求，请检查网络或稍后重试")
                 }
-                if (status == 429) throw WebFailure("WEB_RATE_LIMITED", "请求过于频繁，请稍后重试")
+                if (status == 429) {
+                    recordRateLimit()
+                    throw WebFailure("WEB_RATE_LIMITED", "官网请求过于频繁，已暂停请求；请稍后再试")
+                }
                 if (status !in 200..299) throw WebFailure("WEB_HTTP_ERROR", "官网返回 HTTP " + status)
 
                 if (!image) {
@@ -693,10 +703,22 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
         if (image) Wenku8UrlPolicy.isAllowedImage(url.toString())
         else Wenku8UrlPolicy.isOfficialPage(url.toString())
 
+    private fun recordRateLimit() {
+        // This is a local pause, not a promise that the site will lift its ban.
+        blockedUntil = maxOf(blockedUntil, SystemClock.elapsedRealtime() + 15 * 60_000L)
+    }
+
     private fun waitForRequestSlot() {
         val now = SystemClock.elapsedRealtime()
-        val delay = 900L - (now - lastRequestAt)
+        if (now < blockedUntil) {
+            throw WebFailure("WEB_RATE_LIMITED", "官网仍处于访问限制期间，APP 已停止自动请求，请稍后重试")
+        }
+        // Reader, discovery, searches and book caching share one official queue.
+        val delay = 3500L - (now - lastRequestAt)
         if (lastRequestAt != 0L && delay > 0) Thread.sleep(delay)
+        if (SystemClock.elapsedRealtime() < blockedUntil) {
+            throw WebFailure("WEB_RATE_LIMITED", "官网限流期间已暂停请求")
+        }
         lastRequestAt = SystemClock.elapsedRealtime()
     }
 

@@ -113,6 +113,8 @@ internal object Wenku8BrowserPage {
                             if (closed.get() || view.url != finalUrl) return@evaluateJavascript
                             val html = runCatching { JSONTokener(encoded).nextValue() as? String }.getOrNull().orEmpty()
                             when {
+                                Wenku8RateLimitPolicy.isRateLimited(httpStatus, html) ->
+                                    finish(failure = Failure("WEB_RATE_LIMITED", "官网 Cloudflare 1015 限流，请等待访问恢复"))
                                 Wenku8ChallengePolicy.isChallenge(html, mitigated) ->
                                     finish(failure = Failure("WEB_CHALLENGE", "官网仍要求浏览器验证，请在可见官网页面完成验证"))
                                 httpStatus == 401 ->

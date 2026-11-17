@@ -368,8 +368,21 @@ class LegacyWenkuRepository extends NovelRepository
       );
     }
 
-    final byTitle = await _searchPage(term, 'articlename', page);
-    final byAuthor = await _searchPage(term, 'author', page);
+    // A failure in one official search field must preserve the other field.
+    Future<NovelPage> independent(BookSearchField scope, String name) async {
+      try {
+        return await _searchPage(term, name, page);
+      } catch (error) {
+        return NovelPage(
+          items: const [], page: page, totalPages: page,
+          searchFailures: {scope: error},
+        );
+      }
+    }
+
+    final byTitle = await independent(BookSearchField.title, 'articlename');
+    // A native rate-limit pause rejects the second request without network access.
+    final byAuthor = await independent(BookSearchField.author, 'author');
     final unique = <int, Novel>{
       for (final book in byTitle.items) book.id: book,
       for (final book in byAuthor.items) book.id: book,
@@ -378,8 +391,10 @@ class LegacyWenkuRepository extends NovelRepository
     return NovelPage(
       items: List.unmodifiable(items),
       page: page,
-      totalPages: _maxPages(byTitle.totalPages, byAuthor.totalPages),
-      totalItems: items.length,
+      totalPages: _maxPages(byTitle.totalPages, byAuthor.totalPages) ??
+          (items.isNotEmpty ? null : page),
+      totalItems: null,
+      searchFailures: {...byTitle.searchFailures, ...byAuthor.searchFailures},
     );
   }
 

@@ -82,8 +82,13 @@ abstract final class Wenku8HtmlParser {
       final ids = <int>{};
       for (final anchor in root.querySelectorAll('a[href]')) {
         final uri = _resolvePage(anchor.attributes['href'] ?? '');
-        final id = int.tryParse(RegExp(r'^/novel/\d+/(\d+)/index\.htm$')
-            .firstMatch(uri?.path ?? '')?.group(1) ?? '');
+        final id = _bookId(anchor.attributes['href']) ??
+            int.tryParse(RegExp(r'^/novel/\d+/(\d+)/index\.htm$')
+                .firstMatch(uri?.path ?? '')?.group(1) ?? '');
+        if (id != null && id > 0) ids.add(id);
+      }
+      for (final canonical in document.querySelectorAll('link[rel="canonical"][href]')) {
+        final id = _bookId(canonical.attributes['href']);
         if (id != null && id > 0) ids.add(id);
       }
       if (ids.length == 1) {
@@ -515,7 +520,9 @@ abstract final class Wenku8HtmlParser {
   }
 
   static int? _lastPage(Document document) {
-    var last = 0;
+    final stats = _oneLine(document.querySelector('#pagestats')?.text ?? '');
+    final counted = int.tryParse(RegExp(r'\d+\s*/\s*(\d+)').firstMatch(stats)?.group(1) ?? '');
+    var last = counted ?? 0;
     for (final anchor in document.querySelectorAll('a[href]')) {
       final href = anchor.attributes['href'] ?? '';
       final uri = _resolvePage(href);

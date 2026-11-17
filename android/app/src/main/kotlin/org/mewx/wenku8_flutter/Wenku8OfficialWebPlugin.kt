@@ -28,6 +28,7 @@ import java.nio.charset.Charset
 import java.nio.charset.CodingErrorAction
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.Semaphore
@@ -47,6 +48,13 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
         val textSemaphore: Semaphore = Semaphore(1),
         val lastRequestAt: AtomicLong = AtomicLong(0L),
     )
+    private class RequestRate {
+        val pacing = Wenku8RequestPacing()
+        var reason = "官网访问限流"
+    }
+
+    private class ImageRedirect(val url: String, val remainingHops: Int) : RuntimeException()
+
     private data class LightNovelSession(val host: String, val securityKey: String, val uid: String)
     private class WebFailure(
         val code: String,
@@ -65,6 +73,7 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
 
     // Optional sources must never queue behind the official Wenku8 transport.
     private val worker = Executors.newSingleThreadExecutor()
+    private val cdnWorker = ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, ArrayBlockingQueue(16))
     private val sourceWorker = ThreadPoolExecutor(3, 3, 0L, TimeUnit.MILLISECONDS, ArrayBlockingQueue(24))
     private val sourceImageWorker = ThreadPoolExecutor(4, 4, 0L, TimeUnit.MILLISECONDS, ArrayBlockingQueue(64))
     private val sourceHostStates = ConcurrentHashMap<String, SourceHostState>()
@@ -73,8 +82,8 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
     private var activityBinding: ActivityPluginBinding? = null
     private var pendingLogin: MethodChannel.Result? = null
     private var pendingSourceLogin: MethodChannel.Result? = null
-    private val pacing = Wenku8RequestPacing()
-    private var rateLimitReason = "官网访问限流"
+    private val webRate = RequestRate()
+    private val cdnRate = RequestRate()
     private lateinit var appContext: Context
     private var preferBrowserUntil = 0L
     private var userAgent = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
@@ -99,7 +108,7 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
             "getBytes" -> {
                 val url = call.argument<String>("url") ?: return result.error("WEB_BAD_URL", "缺少图片地址", null)
                 val referer = call.argument<String>("referer")
-                dispatch(result) { request(url, referer, MAX_IMAGE_BYTES, image = true).bytes }
+                dispatchOfficialImage(result, url, referer)
             }
             "getSourceText" -> {
                 val url = call.argument<String>("url")
@@ -287,16 +296,58 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
         }
     }
 
-    private fun dispatch(result: MethodChannel.Result, work: () -> Any?) {
-        worker.execute {
-            try {
-                val value = work()
-                main.post { result.success(value) }
-            } catch (failure: WebFailure) {
-                main.post { result.error(failure.code, failure.message, failure.details) }
-            } catch (_: Exception) {
-                main.post { result.error("WEB_NETWORK_ERROR", "网络请求失败，请检查网络后重试", null) }
+    private fun dispatch(
+        result: MethodChannel.Result,
+        executor: Executor = worker,
+        followRedirect: ((ImageRedirect) -> Unit)? = null,
+        work: () -> Any?,
+    ) {
+        try {
+            executor.execute {
+                try {
+                    val value = work()
+                    main.post { result.success(value) }
+                } catch (redirect: ImageRedirect) {
+                    if (followRedirect != null) {
+                        followRedirect(redirect)
+                    } else {
+                        main.post { result.error("WEB_REDIRECT_ERROR", "图片跳转失败", null) }
+                    }
+                } catch (failure: WebFailure) {
+                    main.post { result.error(failure.code, failure.message, failure.details) }
+                } catch (_: Exception) {
+                    main.post { result.error("WEB_NETWORK_ERROR", "网络请求失败，请检查网络后重试", null) }
+                }
             }
+        } catch (_: RejectedExecutionException) {
+            result.error("WEB_BUSY", "请求队列暂忙，请稍后重试", null)
+        }
+    }
+
+    private fun dispatchOfficialImage(result: MethodChannel.Result, url: String, referer: String?) {
+        val imageReferer = referer ?: Wenku8SessionCookies.activeOrigin() + "/"
+        if (!Wenku8UrlPolicy.isCdnImage(url)) {
+            dispatch(result) {
+                // Relative chapter images are resolved against the canonical
+                // page URL in Dart. Follow the selected login origin for them.
+                val target = if (url.startsWith("$BASE/") && Wenku8UrlPolicy.isAllowedImage(url)) {
+                    Wenku8SessionCookies.routeOfficialPage(url)
+                } else url
+                request(target, imageReferer, MAX_IMAGE_BYTES, image = true).bytes
+            }
+            return
+        }
+        // Only approved static hosts get an independent queue. A redirect to
+        // an allowed same-site image returns to the regular website queue.
+        dispatch(result, executor = cdnWorker, followRedirect = { redirect ->
+            dispatch(result) {
+                request(
+                    redirect.url, imageReferer, MAX_IMAGE_BYTES, image = true,
+                    maxRedirects = redirect.remainingHops,
+                ).bytes
+            }
+        }) {
+            request(url, imageReferer, MAX_IMAGE_BYTES, image = true, cdn = true).bytes
         }
     }
 
@@ -401,14 +452,17 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
         maxBytes: Int,
         image: Boolean,
         search: Boolean = false,
+        cdn: Boolean = false,
+        maxRedirects: Int = 4,
     ): Reply {
+        val rate = if (cdn) cdnRate else webRate
         var current = runCatching { URL(rawUrl) }
             .getOrElse { throw WebFailure("WEB_BAD_URL", "网页地址无效") }
         if (!allowed(current, image)) throw WebFailure("WEB_BAD_URL", "网页地址不在允许访问的文库域名内")
 
-        for (hop in 0..4) {
+        for (hop in 0..maxRedirects) {
             val searchEndpoint = search && (hop == 0 || current.path.endsWith("/search.php"))
-            waitForRequestSlot(searchEndpoint, continuation = hop > 0)
+            waitForRequestSlot(searchEndpoint, continuation = hop > 0, rate = rate)
             val connection = current.openConnection() as HttpURLConnection
             try {
                 connection.requestMethod = "GET"
@@ -426,7 +480,7 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
                 if (referer != null && Wenku8UrlPolicy.isOfficialPage(referer)) {
                     connection.setRequestProperty("Referer", referer)
                 }
-                if (!image && Wenku8UrlPolicy.isOfficialPage(current.toString())) {
+                if (Wenku8UrlPolicy.isOfficialPage(current.toString())) {
                     Wenku8SessionCookies.cookieHeader(current.toString())?.let {
                         connection.setRequestProperty("Cookie", it)
                     }
@@ -460,10 +514,15 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
                             Wenku8UrlPolicy.navigationOrigin(next.toString())?.let { mapOf("origin" to it) },
                         )
                     }
+                    if (cdn && !Wenku8UrlPolicy.isCdnImage(next.toString())) {
+                        if (hop == maxRedirects) break
+                        throw ImageRedirect(next.toString(), maxRedirects - hop - 1)
+                    }
                     current = next
                     continue
                 }
 
+                if (cdn && status == 429) recordRateLimit("图片服务器访问限流", rate)
                 val stream = if (status in 200..299) connection.inputStream
                     else connection.errorStream ?: ByteArrayInputStream(byteArrayOf())
                 val raw = stream.use { input ->
@@ -474,15 +533,28 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
                 }
                 val contentType = connection.contentType
 
-                val body = if (image) "" else decode(raw, contentType)
+                val htmlImageResponse = image && contentType?.substringBefore(';')?.trim()
+                    ?.lowercase() in setOf("text/html", "application/xhtml+xml")
+                val body = if (!image || htmlImageResponse) decode(raw, contentType) else ""
                 val challenge = !image && Wenku8ChallengePolicy.isChallenge(
                     body, connection.getHeaderField("cf-mitigated"),
                 )
                 if (Wenku8RateLimitPolicy.isCloudflareRateLimited(body)) {
-                    recordRateLimit("官网 Cloudflare 1015 限流")
+                    recordRateLimit(
+                        if (cdn) "图片服务器 Cloudflare 1015 限流" else "官网 Cloudflare 1015 限流",
+                        rate,
+                    )
                 }
                 if (status == 429) {
-                    recordRateLimit("官网拒绝了过于频繁的请求（HTTP 429）")
+                    recordRateLimit("官网拒绝了过于频繁的请求（HTTP 429）", rate)
+                }
+                if (image && status !in 200..299) {
+                    throw WebFailure(
+                        "WEB_IMAGE_HTTP_ERROR", "图片服务器返回 HTTP $status", mapOf("httpStatus" to status),
+                    )
+                }
+                if (htmlImageResponse) {
+                    throw WebFailure("WEB_IMAGE_INVALID", "图片服务器返回了网页，插图暂不可用")
                 }
                 if (challenge) {
                     throw WebFailure("WEB_CHALLENGE", "官网仍要求浏览器验证；请在官网完成验证后重试")
@@ -755,26 +827,34 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
         if (image) Wenku8UrlPolicy.isAllowedImage(url.toString())
         else Wenku8UrlPolicy.isOfficialPage(url.toString())
 
-    private fun recordRateLimit(reason: String): Nothing {
-        rateLimitReason = reason
-        preferBrowserUntil = 0L
-        pacing.recordRateLimit(SystemClock.elapsedRealtime())
-        throw rateLimitFailure(pacing.remainingCooldownMs(SystemClock.elapsedRealtime()))
+    private fun recordRateLimit(reason: String, rate: RequestRate = webRate): Nothing {
+        rate.reason = reason
+        if (rate === webRate) preferBrowserUntil = 0L
+        val now = SystemClock.elapsedRealtime()
+        rate.pacing.recordRateLimit(now)
+        throw rateLimitFailure(rate, rate.pacing.remainingCooldownMs(now))
     }
 
-    private fun rateLimitFailure(remaining: Long): WebFailure {
+    private fun rateLimitFailure(rate: RequestRate, remaining: Long): WebFailure {
         val seconds = (remaining + 999L) / 1000L
-        return WebFailure(
-            "WEB_RATE_LIMITED",
-            rateLimitReason,
-            mapOf("retryAfterSeconds" to seconds),
-        )
+        return if (rate === cdnRate) {
+            WebFailure(
+                "WEB_IMAGE_HTTP_ERROR", rate.reason, mapOf("httpStatus" to 429, "retryAfterSeconds" to seconds),
+            )
+        } else {
+            WebFailure("WEB_RATE_LIMITED", rate.reason, mapOf("retryAfterSeconds" to seconds))
+        }
     }
 
-    private fun waitForRequestSlot(search: Boolean, continuation: Boolean = false) {
+    private fun waitForRequestSlot(
+        search: Boolean,
+        continuation: Boolean = false,
+        rate: RequestRate = webRate,
+    ) {
+        val pacing = rate.pacing
         val now = SystemClock.elapsedRealtime()
         val remaining = pacing.remainingCooldownMs(now)
-        if (remaining > 0L) throw rateLimitFailure(remaining)
+        if (remaining > 0L) throw rateLimitFailure(rate, remaining)
         // Only independent searches wait for the search interval. A redirect or
         // browser continuation is still counted as traffic and updates the last search.
         val delay = pacing.delayMs(now, search, continuation)
@@ -887,6 +967,7 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
         channel?.setMethodCallHandler(null)
         channel = null
         worker.shutdownNow()
+        cdnWorker.shutdownNow()
         sourceWorker.shutdownNow()
         sourceImageWorker.shutdownNow()
         detachActivity()

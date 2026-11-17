@@ -358,7 +358,10 @@ abstract final class Wenku8HtmlParser {
       return '';
     }
     if (tag == 'img') {
-      final url = _absoluteImageUrl(node.attributes['src'], baseUri);
+      final url =
+          _absoluteImageUrl(node.attributes['data-src'], baseUri) ??
+          _absoluteImageUrl(node.attributes['data-original'], baseUri) ??
+          _absoluteImageUrl(node.attributes['src'], baseUri);
       return url == null ? '' : '\n\n<!--image-->$url<!--image-->\n\n';
     }
     if (tag == 'br') return '\n';

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
@@ -143,15 +144,37 @@ class OfflineCacheStore extends ChangeNotifier {
     }
   }
 
-  Future<bool> hasIllustration(int id, String url) async {
+  Future<bool> hasIllustration(int id, String url) async =>
+      await _readIllustration(id, url) != null;
+
+  Future<Uint8List?> _readIllustration(int id, String url) async {
     await load();
     final size = _books[id]?.illustrationBytes[url];
-    if (size == null) return false;
+    if (size == null) return null;
     try {
       final file = _illustration(id, url);
-      return await file.exists() && await file.length() == size;
+      if (await file.length() != size) return null;
+      final bytes = await file.readAsBytes();
+      if (bytes.length == size && await _isImage(bytes)) return bytes;
     } on FileSystemException {
+      return null;
+    }
+    return null;
+  }
+
+  static Future<bool> _isImage(Uint8List bytes) async {
+    final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+    try {
+      final descriptor = await ui.ImageDescriptor.encoded(buffer);
+      try {
+        return descriptor.width > 0 && descriptor.height > 0;
+      } finally {
+        descriptor.dispose();
+      }
+    } on Exception {
       return false;
+    } finally {
+      buffer.dispose();
     }
   }
 
@@ -160,14 +183,8 @@ class OfflineCacheStore extends ChangeNotifier {
   Future<Uint8List?> readIllustration(String url) async {
     await load();
     for (final id in _illustrationOwners[url]?.toList() ?? const <int>[]) {
-      if (!await hasIllustration(id, url)) continue;
-      try {
-        final bytes = await _illustration(id, url).readAsBytes();
-        if (bytes.length == _books[id]?.illustrationBytes[url]) return bytes;
-      } on FileSystemException {
-        // Another book may also own this image; deletion never causes a miss
-        // for its remaining durable copy.
-      }
+      final bytes = await _readIllustration(id, url);
+      if (bytes != null) return bytes;
     }
     return null;
   }
@@ -403,6 +420,9 @@ class OfflineCacheStore extends ChangeNotifier {
   }) async {
     if (bytes.isEmpty || bytes.length > maxIllustrationBytes) {
       throw const FormatException('插图超过本地缓存大小限制');
+    }
+    if (!await _isImage(bytes)) {
+      throw const FormatException('图片服务器返回了无效的插图');
     }
     await load();
     return _serialize(() async {

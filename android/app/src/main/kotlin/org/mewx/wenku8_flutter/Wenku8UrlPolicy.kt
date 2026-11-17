@@ -105,6 +105,9 @@ internal object Wenku8UrlPolicy {
                 path.startsWith("/turnstile/"))
     }
 
+    fun isCdnImage(raw: String): Boolean =
+        parse(raw)?.host?.lowercase() in imageHosts && isAllowedImage(raw)
+
     fun isAllowedImage(raw: String): Boolean {
         val uri = parse(raw) ?: return false
         val path = uri.rawPath ?: return false

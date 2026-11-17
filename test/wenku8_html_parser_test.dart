@@ -151,6 +151,8 @@ void main() {
             <p>第一段正文。</p>
             <p>第二段正文。<img src="http://img.wenku8.com/image/4/4265/illust.jpg"></p>
             <p><img src="/pictures/4/4265/1001/1.jpg"></p>
+            <p><img src="/pictures/placeholder.png" data-src="/pictures/4/4265/1001/2.jpg"></p>
+            <p><img data-src="https://evil.example/a.jpg" data-original="/pictures/4/4265/1001/3.jpg"></p>
           </div>
         </body></html>
       ''';
@@ -163,6 +165,10 @@ void main() {
       expect(body, contains('第二段正文。'));
       expect(body, contains('<!--image-->https://img.wenku8.com/image/4/4265/illust.jpg<!--image-->'));
       expect(body, contains('<!--image-->https://www.wenku8.cc/pictures/4/4265/1001/1.jpg<!--image-->'));
+      expect(body, contains('<!--image-->https://www.wenku8.cc/pictures/4/4265/1001/2.jpg<!--image-->'));
+      expect(body, contains('<!--image-->https://www.wenku8.cc/pictures/4/4265/1001/3.jpg<!--image-->'));
+      expect(body, isNot(contains('placeholder.png')));
+      expect(body, isNot(contains('evil.example')));
       expect(body, isNot(contains('章节导航')));
     });
   });

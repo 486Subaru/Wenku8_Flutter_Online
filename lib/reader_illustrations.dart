@@ -9,6 +9,7 @@ import 'app_ui.dart';
 import 'app_interactions.dart';
 import 'local_platform.dart';
 import 'legacy_transport.dart';
+import 'online_component.dart';
 import 'local_book_media.dart';
 import 'local_image_layout.dart';
 import 'gallery_save_button.dart';
@@ -529,6 +530,7 @@ class _ReaderIllustrationState extends State<ReaderIllustration> {
   }
 
   String _failureLabel(Object? error) {
+    if (error is OnlineRateLimited) return error.reason;
     final status = error is PlatformException && error.details is Map
         ? (error.details as Map)['httpStatus']
         : null;

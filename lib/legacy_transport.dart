@@ -224,6 +224,7 @@ abstract final class LegacyTransport {
     } on MissingPluginException {
       throw const OnlineComponentUnavailable();
     } on PlatformException catch (failure) {
+      if (failure.code == 'WEB_IMAGE_HTTP_ERROR') rethrow;
       _throwPlatform(failure);
     }
   }

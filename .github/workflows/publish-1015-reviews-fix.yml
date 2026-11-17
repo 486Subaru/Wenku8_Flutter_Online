@@ -1,0 +1,63 @@
+name: Publish verified rate-limit and review fix prerelease
+
+on:
+  push:
+    branches: ['publish/riqing-2286-1015-reviews-fix']
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: publish-riqing-2286-1015-reviews-fix
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: 486Subaru/Wenku8_Flutter_Online
+      TAG: riqing-v0.5.5-2286-1015-reviews-fix
+      BUILD_SHA: 34ee3cc74b7c70b443c801c7d114c43ba5c1faf8
+      RUN_ID: '44013611300'
+    steps:
+      - name: Verify successful ARM64 build and artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/$GH_REPO/actions/runs/$RUN_ID" --jq .head_sha)" = "$BUILD_SHA"
+          test "$(gh api "repos/$GH_REPO/actions/runs/$RUN_ID" --jq .conclusion)" = success
+          mkdir -p release
+          gh run download "$RUN_ID" --repo "$GH_REPO" --name riqing-0.5.5-arm64-v2286 --dir release
+          test -s release/riqing-0.5.5-arm64-v8a.apk
+          unzip -tq release/riqing-0.5.5-arm64-v8a.apk
+          unzip -Z1 release/riqing-0.5.5-arm64-v8a.apk | grep -q '^lib/arm64-v8a/libapp.so$'
+          sha256sum release/riqing-0.5.5-arm64-v8a.apk
+
+      - name: Publish separate prerelease (keep prior releases unchanged)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > release-notes.md <<'NOTES'
+          ## 日轻 0.5.5（2286）1015 限流、搜索、书评和下载修复测试版
+
+          基于源码提交 34ee3cc74b7c70b443c801c7d114c43ba5c1faf8，经过 GitHub Actions run 44013611300 的源码分析、Flutter 自动测试、ARM64 编译和 Android 原生测试。
+
+          - 识别文库 Cloudflare Error 1015 / HTTP 429，并暂停连续官方请求
+          - 统一控制官网请求间隔，减少连续章节缓存导致限流的风险
+          - 独立处理书名和作者搜索失败，保留成功搜索的结果并修复翻页计数
+          - 书评列表与楼层读取；接入账号资料和带事后复核的书评发表、回复逻辑
+          - 保留多书源配置和原来的缓存功能
+          - 增加官网 TXT 整本下载：简体 UTF-8、简体 GBK、繁体 Big5，载点一或载点二（通过外部浏览器打开）
+
+          **测试版警告**：Cloudflare 限流由网站决定，APP 的限速无法保证解除当前 IP 限制。未经过用户手机上的真实官网测试，书评发表/回复和下载镜像仍需验证。每日签到与云书架功能未完全恢复。此 APK 是独立测试版，包名/签名可能与旧版不同。请不要为安装而卸载旧版或清空阅读数据。
+
+          这里的 TXT 下载将文件交给外部浏览器，不会自动导入本地书架。
+          NOTES
+          if gh release view "$TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
+            echo "Release already exists; refusing to overwrite." >&2
+            exit 1
+          fi
+          gh release create "$TAG" release/riqing-0.5.5-arm64-v8a.apk --repo "$GH_REPO" --target "$BUILD_SHA" --title "日轻 0.5.5（2286）限流·搜索·书评联合修复测试版" --notes-file release-notes.md --prerelease --latest=false

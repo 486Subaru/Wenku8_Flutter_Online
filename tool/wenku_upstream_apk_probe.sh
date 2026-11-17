@@ -37,8 +37,24 @@ def tap(node):
     x1,y1,x2,y2=coordinates
     adb('shell','input','tap',str((x1+x2)//2),str((y1+y2)//2))
     return True
+def label_is(node, labels):
+    return any((node.get(key) or '').split('\n')[0].strip() in labels for key in ('text','content-desc'))
 nodes=snapshot('upstream-start')
-search=next((n for n in nodes if n.get('clickable')=='true' and any((n.get(k) or '').strip() in ('搜索', '搜索书籍', '搜索作品', 'Search', '查找') for k in ('text','content-desc'))), None)
+for index in range(4):
+    words=[(n.get('text') or '')+' '+(n.get('content-desc') or '') for n in nodes]
+    if not any('本版更新' in value or '请务必阅读' in value or '更新说明' in value for value in words):
+        break
+    onward=next((n for n in nodes if n.get('clickable')=='true' and label_is(n, ('下一页', '完成', '我知道了', '开始使用', '关闭', '我已阅读', '进入应用'))), None)
+    if onward is None:
+        onward=next((n for n in nodes if label_is(n, ('下一页', '完成', '我知道了', '开始使用', '关闭', '我已阅读', '进入应用'))), None)
+    if onward is None or not tap(onward):
+        print('Onboarding action unavailable in the visible UI tree.')
+        break
+    time.sleep(5)
+    nodes=snapshot('upstream-onboarding-'+str(index+1))
+time.sleep(6)
+nodes=snapshot('upstream-home')
+search=next((n for n in nodes if n.get('clickable')=='true' and label_is(n, ('搜索', '搜索书籍', '搜索作品', '搜索故事', 'Search', '查找'))), None)
 if search is not None and tap(search):
     time.sleep(3)
     fields=snapshot('upstream-search-open')

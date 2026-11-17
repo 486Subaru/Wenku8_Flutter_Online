@@ -16,22 +16,40 @@ class Wenku8RateLimitPolicyTest {
         assertFalse(Wenku8RateLimitPolicy.isRateLimited(200, "小说正文包含 Error 1015 一句话"))
     }
 
-    @Test fun ordinaryTrafficRetainsTheConservativeSpacing() {
+    @Test fun smallBurstsRestoreThePreviousNormalSpacing() {
         val pacing = Wenku8RequestPacing()
         assertEquals(0L, pacing.delayMs(0L))
         pacing.markStarted(0L)
-        assertEquals(2_600L, pacing.delayMs(900L))
-        assertEquals(0L, pacing.delayMs(3_500L))
+        assertEquals(800L, pacing.delayMs(100L))
+        assertEquals(0L, pacing.delayMs(900L))
+        pacing.markStarted(900L)
+        assertEquals(0L, pacing.delayMs(1_800L))
+        pacing.markStarted(1_800L)
+        assertEquals(900L, pacing.delayMs(2_700L))
+        assertEquals(0L, pacing.delayMs(3_600L))
+        assertEquals(0L, pacing.delayMs(12_000L))
+        pacing.markStarted(12_000L)
+        assertEquals(0L, pacing.delayMs(12_900L))
     }
 
-    @Test fun usesTheLongerOfSearchAndGlobalSpacing() {
+    @Test fun independentSearchStillWaitsAfterItsLatestSearchEndpoint() {
         val pacing = Wenku8RequestPacing()
         pacing.markStarted(0L, search = true)
-        assertEquals(1_600L, pacing.delayMs(3_500L, search = true))
-        assertEquals(0L, pacing.delayMs(3_500L))
-        pacing.markStarted(3_500L)
-        assertEquals(1_900L, pacing.delayMs(5_100L, search = true))
-        assertEquals(0L, pacing.delayMs(7_000L, search = true))
+        assertEquals(5_000L, pacing.delayMs(100L, search = true))
+        assertEquals(800L, pacing.delayMs(100L, search = true, continuation = true))
+        pacing.markStarted(900L, search = true)
+        assertEquals(900L, pacing.delayMs(5_100L, search = true))
+        assertEquals(0L, pacing.delayMs(6_000L, search = true))
+    }
+
+    @Test fun rateLimitRecoveryUsesConservativeSpacingBeforeResumingNormalTraffic() {
+        val pacing = Wenku8RequestPacing()
+        pacing.recordRateLimit(0L)
+        val resume = 900_000L
+        pacing.markStarted(resume)
+        assertEquals(2_600L, pacing.delayMs(resume + 900L))
+        pacing.markStarted(resume + 119_100L)
+        assertEquals(0L, pacing.delayMs(resume + 120_000L))
     }
 
     @Test fun stopsUntilTheCooldownExpiresWithoutMovingItOnARejectedRequest() {

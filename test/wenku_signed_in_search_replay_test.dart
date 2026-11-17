@@ -110,4 +110,51 @@ void main() {
     expect(queries.skip(3), ['articlename:2']);
     print('WENKU_REPLAY retry: initial page kept; retry requests=${queries.skip(3).join(",")}');
   });
+  test('retry only fetches the failed field on a partial successful page', () async {
+    final queries = <String>[];
+    var authorFails = true;
+    final repo = LegacyWenkuRepository(
+      searchRequest: (_, {field = 'articlename', page = 1}) async {
+        queries.add('$field:$page');
+        if (field == 'author' && authorFails) throw StateError('temporarily unavailable');
+        return field == 'author'
+            ? bookPage(200, 5, page, 1)
+            : bookPage(100, 20, page, 3);
+      },
+    );
+    final feed = NovelFeedController(repo, search: true);
+    addTearDown(feed.dispose);
+
+    await feed.searchFor('回放关键词');
+    expect(feed.items, hasLength(20));
+    expect(feed.incompleteSearchFields, {BookSearchField.author});
+
+    authorFails = false;
+    await feed.retry();
+    expect(queries, ['articlename:1', 'author:1', 'author:1']);
+    expect(feed.items, hasLength(25));
+    expect(feed.page, 1);
+    expect(feed.hasMore, isTrue);
+    expect(feed.searchNotice, isNull);
+  });
+
+  test('missing title page metadata never borrows the completed author cursor', () async {
+    final queries = <String>[];
+    final repo = LegacyWenkuRepository(
+      searchRequest: (_, {field = 'articlename', page = 1}) async {
+        queries.add('$field:$page');
+        if (field == 'author') return emptyPage;
+        return '<div id="content"><a href="/book/$page.htm">第 $page 页</a></div>';
+      },
+    );
+    final feed = NovelFeedController(repo, search: true);
+    addTearDown(feed.dispose);
+
+    await feed.searchFor('回放关键词');
+    expect(feed.hasMore, isTrue);
+    await feed.loadMore();
+    expect(feed.items.map((book) => book.id), [1, 2]);
+    expect(queries, ['articlename:1', 'author:1', 'articlename:2']);
+  });
+
 }

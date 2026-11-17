@@ -338,11 +338,16 @@ abstract final class Wenku8HtmlParser {
         .replaceAll(RegExp(r'\n[ \t]+'), '\n')
         .replaceAll(RegExp(r'\n{3,}'), '\n\n')
         .trim();
-    if (normalized.isEmpty) throw const FormatException('章节正文为空');
+    if (normalized.isEmpty) {
+      if (root.querySelector('.divimage, img') != null) {
+        throw const FormatException('官网插图地址缺失或暂不支持');
+      }
+      throw const FormatException('章节正文为空');
+    }
     return normalized;
   }
 
-  static String _flatten(Node node, Uri baseUri) {
+  static String _flatten(Node node, Uri baseUri, {bool gallery = false}) {
     if (node is Text) return node.text;
     if (node is! Element) return '';
     final tag = node.localName;
@@ -357,15 +362,23 @@ abstract final class Wenku8HtmlParser {
     }.contains(tag)) {
       return '';
     }
+    final inGallery = gallery || node.classes.contains('divimage');
+    if (tag == 'a' && inGallery) {
+      // The gallery link points to the original, even without a thumbnail.
+      final original = _absoluteImageUrl(node.attributes['href'], baseUri);
+      if (original != null) return _imageParagraph(original);
+    }
     if (tag == 'img') {
       final url =
           _absoluteImageUrl(node.attributes['data-src'], baseUri) ??
           _absoluteImageUrl(node.attributes['data-original'], baseUri) ??
           _absoluteImageUrl(node.attributes['src'], baseUri);
-      return url == null ? '' : '\n\n<!--image-->$url<!--image-->\n\n';
+      return url == null ? '' : _imageParagraph(url);
     }
     if (tag == 'br') return '\n';
-    final content = node.nodes.map((child) => _flatten(child, baseUri)).join();
+    final content = node.nodes
+        .map((child) => _flatten(child, baseUri, gallery: inGallery))
+        .join();
     if (const {
       'p',
       'div',
@@ -385,6 +398,9 @@ abstract final class Wenku8HtmlParser {
     }
     return content;
   }
+
+  static String _imageParagraph(String url) =>
+      '\n\n<!--image-->$url<!--image-->\n\n';
 
   static String _labeledValue(Element root, String label) {
     final candidates = root

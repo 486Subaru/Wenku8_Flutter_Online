@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:wenku8_flutter/reader_content.dart';
 import 'package:wenku8_flutter/wenku8_html_parser.dart';
 
 void main() {
@@ -141,6 +142,54 @@ void main() {
       expect(chapters.first.volumeTitle, '第一卷');
       expect(chapters.last.volumeId, 2);
       expect(chapters.last.volumeTitle, '第二卷');
+    });
+
+    test('only-image chapters read the original links from Wenku8 galleries',
+        () async {
+      const html = '''
+        <div id="content">
+          <div class="divimage">
+            <a href="http://pic.wenku8.com/pictures/4/4265/1001/1.jpg">
+              <img src="/pictures/thumbnail.jpg">
+            </a>
+          </div>
+          <div class="divimage">
+            <a href="//pic.wenku8.com/pictures/4/4265/1001/2.jpg"></a>
+          </div>
+          <div class="divimage">
+            <a href="https://outside.example/image.jpg">
+              <img src="/pictures/4/4265/1001/3.jpg">
+            </a>
+          </div>
+        </div>
+      ''';
+      final marked = Wenku8HtmlParser.parseChapterBody(
+        html,
+        'https://www.wenku8.cc/novel/4/4265/1001.htm',
+      );
+      final content = await ReaderContent.parse(marked);
+      expect(content.illustrations, [
+        'https://pic.wenku8.com/pictures/4/4265/1001/1.jpg',
+        'https://pic.wenku8.com/pictures/4/4265/1001/2.jpg',
+        'https://www.wenku8.cc/pictures/4/4265/1001/3.jpg',
+      ]);
+      expect(marked, isNot(contains('thumbnail.jpg')));
+      expect(marked, isNot(contains('outside.example')));
+    });
+
+    test('an unreadable gallery gets an illustration error, not empty text', () {
+      expect(
+        () => Wenku8HtmlParser.parseChapterBody(
+          '<div id="content"><div class="divimage">'
+          '<a href="https://outside.example/image.jpg"></a></div></div>',
+          'https://www.wenku8.cc/novel/4/4265/1001.htm',
+        ),
+        throwsA(isA<FormatException>().having(
+          (failure) => failure.message,
+          'message',
+          '官网插图地址缺失或暂不支持',
+        )),
+      );
     });
 
     test('removes chapter navigation and preserves illustration markers', () {

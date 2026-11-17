@@ -30,7 +30,7 @@ android {
 
     defaultConfig {
         // Public source previews must not replace an installed distribution.
-        applicationId = "org.mewx.wenku8_flutter.online.fix"
+        applicationId = "org.mewx.wenku8_flutter.online.riqingcdn"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

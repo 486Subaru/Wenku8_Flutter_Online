@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wenku8_flutter/book_search.dart';
+import 'package:wenku8_flutter/catalog.dart';
 import 'package:wenku8_flutter/legacy_wenku_repository.dart';
 import 'package:wenku8_flutter/novel_feed_controller.dart';
 import 'package:wenku8_flutter/online_component.dart';
@@ -154,4 +155,94 @@ void main() {
     expect(queries, ['articlename:1', 'author:1', 'articlename:2']);
   });
 
+  test('an incomplete full refresh retains both visible pages until recovery', () async {
+    final queries = <String>[];
+    var refreshing = false;
+    var fail = false;
+    final repo = LegacyWenkuRepository(
+      searchRequest: (_, {field = 'articlename', page = 1}) async {
+        queries.add('$field:$page');
+        if (field == 'author') return emptyPage;
+        if (page == 2 && fail) throw OnlineRateLimited('官网 Cloudflare 1015 限流');
+        return bookPage((refreshing ? 300 : 100) + (page - 1) * 20, 20, page, 7);
+      },
+    );
+    final feed = NovelFeedController(repo, search: true);
+    addTearDown(feed.dispose);
+    await feed.searchFor('回放关键词');
+    await feed.loadMore();
+
+    refreshing = true;
+    fail = true;
+    await feed.refresh();
+    expect(feed.items.map((book) => book.id), List.generate(40, (i) => 100 + i));
+    expect(feed.page, 2);
+    expect(feed.searchNotice, contains('1015'));
+
+    queries.clear();
+    fail = false;
+    await feed.retry();
+    expect(queries, ['articlename:2']);
+    expect(feed.items.map((book) => book.id), List.generate(40, (i) => 300 + i));
+    expect(feed.page, 2);
+    expect(feed.searchNotice, isNull);
+  });
+
+  test('a repeated first page cannot silently consume the second page cursor', () async {
+    final queries = <String>[];
+    var repeatFirst = true;
+    final repo = LegacyWenkuRepository(
+      searchRequest: (_, {field = 'articlename', page = 1}) async {
+        queries.add('$field:$page');
+        if (field == 'author') return emptyPage;
+        if (page == 1 || repeatFirst) return bookPage(100, 20, 1, 7);
+        return bookPage(120, 20, 2, 7);
+      },
+    );
+    final feed = NovelFeedController(repo, search: true);
+    addTearDown(feed.dispose);
+    await feed.searchFor('回放关键词');
+    await feed.loadMore();
+    expect(feed.items, hasLength(20));
+    expect(feed.searchNotice, isNotNull);
+
+    repeatFirst = false;
+    await feed.retry();
+    expect(queries, ['articlename:1', 'author:1', 'articlename:2', 'articlename:2']);
+    expect(feed.items, hasLength(40));
+    expect(feed.searchNotice, isNull);
+  });
+
+  test('opening search can defer follow-up discovery requests already in progress', () async {
+    final repository = ReplayDiscoveryRepository();
+    final feed = NovelFeedController(repository, initialItems: 2);
+    addTearDown(feed.dispose);
+    final load = feed.loadInitial();
+    feed.deferBackgroundPaging(true);
+    repository.first.complete(NovelPage(items: [demoNovels.first], page: 1, totalPages: 2));
+    await load;
+    expect(repository.requests, [1]);
+    expect(feed.items, hasLength(1));
+    expect(feed.deferBackgroundPaging(false), isTrue);
+    await feed.loadMore();
+    expect(repository.requests, [1, 2]);
+    expect(feed.items, hasLength(2));
+  });
+
+}
+
+class ReplayDiscoveryRepository extends DemoNovelRepository {
+  final first = Completer<NovelPage>();
+  final requests = <int>[];
+
+  @override
+  Future<NovelPage> browse({
+    NovelSort sort = NovelSort.lastUpdate,
+    int page = 1,
+    bool refresh = false,
+  }) async {
+    requests.add(page);
+    if (page == 1) return first.future;
+    return NovelPage(items: [demoNovels[1]], page: page, totalPages: 2);
+  }
 }

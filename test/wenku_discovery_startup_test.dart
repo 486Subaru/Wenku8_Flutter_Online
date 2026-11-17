@@ -30,11 +30,13 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     final preferences = await SharedPreferences.getInstance();
     final state = LibraryState(preferences);
-    final directory = await tester.runAsync(
-      () => Directory.systemTemp.createTemp('wenku-cold-start-'),
-    );
+    final cache = (await tester.runAsync(() async {
+      final directory = await Directory.systemTemp.createTemp('wenku-cold-start-');
+      final result = OfflineCacheStore(directory);
+      await result.load();
+      return result;
+    }))!;
     final remote = _CountingRepository();
-    final cache = OfflineCacheStore(directory!);
     final repository = OfflineNovelRepository(remote: remote, cache: cache);
 
     await tester.pumpWidget(MaterialApp(
@@ -55,10 +57,9 @@ void main() {
     expect(remote.requests, 1);
 
     await tester.pumpWidget(const SizedBox.shrink());
-    await tester.runAsync(() => cache.load());
     repository.dispose();
     cache.dispose();
     state.dispose();
-    await tester.runAsync(() => directory.delete(recursive: true));
+    await tester.runAsync(() => cache.directory.delete(recursive: true));
   });
 }

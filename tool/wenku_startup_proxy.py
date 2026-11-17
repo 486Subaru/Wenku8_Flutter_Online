@@ -35,6 +35,7 @@ async def connect(client, outgoing):
             return
         print(host.lower(), flush=True)
         remote, upstream = await asyncio.wait_for(asyncio.open_connection(host, int(port)), 10)
+        print('connected ' + host.lower(), flush=True)
         outgoing.write(b"HTTP/1.1 200 Connection Established\r\n\r\n")
         await outgoing.drain()
         await asyncio.wait_for(

@@ -31,7 +31,7 @@ echo 'Cold start: zero connections to official Wenku8 sites and image hosts.'
 mkdir -p build/wenku-startup-diagnostics
 diagnostics=build/wenku-startup-diagnostics
 coordinate=''
-for attempt in $(seq 1 10); do
+for attempt in $(seq 1 14); do
   if adb shell uiautomator dump /sdcard/wenku-startup.xml; then
     adb exec-out cat /sdcard/wenku-startup.xml > "$diagnostics/hierarchy.xml"
     coordinate="$(python3 - "$diagnostics/hierarchy.xml" <<'PY'
@@ -39,19 +39,30 @@ import re
 import sys
 import xml.etree.ElementTree as ET
 
-for node in ET.parse(sys.argv[1]).iter('node'):
+nodes = list(ET.parse(sys.argv[1]).iter('node'))
+release_notes = any('本版更新' in node.get('content-desc', '') for node in nodes)
+for node in nodes:
     identifier = node.get('resource-id', '')
     labels = node.get('text', '') + node.get('content-desc', '')
-    if 'wenku8_load_discovery' in identifier or any(
+    if release_notes and labels.splitlines() and set(labels.splitlines()) <= {'下一页', '完成'}:
+        action = 'release-notes'
+    elif 'wenku8_load_discovery' in identifier or any(
         label in labels for label in ('加载发现', '載入發現', '加載發現')
     ):
-        x1, y1, x2, y2 = map(int, re.findall(r'\d+', node.attrib['bounds']))
-        if x2 > x1 and y2 > y1:
-            print((x1 + x2) // 2, (y1 + y2) // 2)
-            break
+        action = 'discover'
+    else:
+        continue
+    x1, y1, x2, y2 = map(int, re.findall(r'\d+', node.attrib['bounds']))
+    if x2 > x1 and y2 > y1:
+        print(action, (x1 + x2) // 2, (y1 + y2) // 2)
+        break
 PY
 )" || coordinate=''
-    if [[ -n "$coordinate" ]]; then
+    if [[ "$coordinate" == release-notes\ * ]]; then
+      read -r action x y <<< "$coordinate"
+      adb shell input tap "$x" "$y"
+      coordinate=''
+    elif [[ "$coordinate" == discover\ * ]]; then
       break
     fi
   fi
@@ -63,15 +74,33 @@ if [[ -z "$coordinate" ]]; then
   echo 'Cannot find the explicit discovery control. The emulator screen and UI hierarchy are attached.'
   exit 1
 fi
+sleep 5
 if grep -E "$official" "$traffic"; then
   echo 'The discovery page would have contacted the official hosts without input.'
   exit 1
 fi
-read -r x y <<< "$coordinate"
+read -r action x y <<< "$coordinate"
 adb shell input tap "$x" "$y"
 for attempt in $(seq 1 15); do
-  if grep -m1 -E "$page_official" "$traffic"; then
-    echo 'Explicit discovery tap reached the official website connection.'
+  if grep -m1 -E "connected (${page_official#^})" "$traffic"; then
+    echo 'Explicit discovery tap connected to the real official website.'
+    sleep 25
+    adb shell uiautomator dump /sdcard/wenku-startup.xml
+    adb exec-out cat /sdcard/wenku-startup.xml > "$diagnostics/result.xml"
+    python3 - "$diagnostics/result.xml" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+
+labels = [
+    node.get('text', '') + node.get('content-desc', '')
+    for node in ET.parse(sys.argv[1]).iter('node')
+]
+for label in labels:
+    if any(text in label for text in ('1015', '需要完成官网验证', '需要连接文库账号', '书籍加载失败')):
+        print(label[:360].replace('\n', ' '))
+if any('1015' in label for label in labels):
+    raise SystemExit('The official website rate-limited the explicit initial request.')
+PY
     exit 0
   fi
   sleep 1

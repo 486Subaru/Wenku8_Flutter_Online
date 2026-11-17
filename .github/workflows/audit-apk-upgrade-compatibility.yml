@@ -28,6 +28,6 @@ jobs:
             APK="$TAG/riqing-0.5.5-arm64-v8a.apk"
             printf '\n=== %s ===\n' "$TAG"
             "$TOOLS/aapt" dump badging "$APK" | grep '^package:' | head -1
-            "$TOOLS/apksigner" verify --print-certs --verbose "$APK" | grep -E 'Signer #1 certificate SHA-256 digest|Verified using v[123] scheme'
+            "$TOOLS/apksigner" verify --print-certs --verbose "$APK"
             sha256sum "$APK"
           done

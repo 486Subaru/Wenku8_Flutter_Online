@@ -28,11 +28,12 @@ jobs:
       - name: Build the product and diagnostic APKs
         run: |
           flutter pub get
+          dart analyze tool/wenku_android_network_probe.dart
           mkdir -p build/emulator-evidence
-          flutter build apk --debug --target-platform android-x64 --no-pub
-          cp build/app/outputs/flutter-apk/app-debug.apk /tmp/wenku-product.apk
-          flutter build apk --debug --target-platform android-x64 --target tool/wenku_android_network_probe.dart --no-pub
-          cp build/app/outputs/flutter-apk/app-debug.apk /tmp/wenku-probe.apk
+          flutter build apk --release --target-platform android-x64 --no-pub
+          cp build/app/outputs/flutter-apk/app-release.apk /tmp/wenku-product.apk
+          flutter build apk --release --target-platform android-x64 --target tool/wenku_android_network_probe.dart --no-pub
+          cp build/app/outputs/flutter-apk/app-release.apk /tmp/wenku-probe.apk
           sha256sum /tmp/wenku-product.apk /tmp/wenku-probe.apk | tee build/emulator-evidence/apk-sha256.txt
       - name: Enable KVM
         run: |

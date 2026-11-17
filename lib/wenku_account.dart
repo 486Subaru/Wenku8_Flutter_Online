@@ -1,4 +1,6 @@
 import 'package:flutter/foundation.dart';
+import 'package:html/parser.dart' as html;
+import 'wenku_reviews.dart';
 
 import 'legacy_transport.dart';
 import 'library_state.dart';
@@ -145,7 +147,72 @@ class WenkuAccount extends ChangeNotifier {
 
   Future<void> connectPublications(String _password) => login('', '');
 
-  Future<void> refreshProfile() => initialize();
+  static WenkuProfile parseOfficialProfile(String source) {
+    final fields = <String, String>{};
+    for (final row in html.parse(source).querySelectorAll('tr')) {
+      final cells = row.children.where((cell) => cell.localName == 'td').toList();
+      if (cells.length < 2) continue;
+      final key = cells.first.text.replaceAll(RegExp(r'[\s：:]'), '');
+      for (final cell in cells.skip(1)) {
+        final text = (cell.querySelector('input[value]')?.attributes['value'] ?? cell.text).trim();
+        if (text.isNotEmpty) {
+          fields.putIfAbsent(key, () => text);
+          break;
+        }
+      }
+    }
+    String field(List<String> names) {
+      for (final name in names) {
+        if ((fields[name] ?? '').isNotEmpty) return fields[name]!;
+      }
+      return '';
+    }
+    int number(List<String> names) =>
+        int.tryParse(field(names).replaceAll(RegExp(r'[^\d]'), '')) ?? 0;
+    final id = number(['用户ID', 'UID', '用户编号']);
+    final username = field(['用户名', '用户名称']);
+    if (id <= 0 && username.isEmpty) {
+      throw const FormatException('官网未返回账号资料，请检查登录状态');
+    }
+    return WenkuProfile(
+      id: id, username: username, nickname: field(['昵称']),
+      score: number(['现有积分', '积分']),
+      experience: number(['经验值', '经验']),
+      rank: field(['等级', '头衔']),
+    );
+  }
+
+  Future<T> _accountAction<T>(String title, Future<T> Function() action) async {
+    if (busy) throw const FormatException('账号操作正在进行，请稍后重试');
+    if (!authenticated) await initialize();
+    if (!authenticated || !await LegacyTransport.hasSession()) {
+      throw const OnlineAuthenticationRequired();
+    }
+    busy = true;
+    operation = title;
+    error = null;
+    notifyListeners();
+    try {
+      return await action();
+    } catch (failure) {
+      error = describeError(failure);
+      rethrow;
+    } finally {
+      busy = false;
+      operation = null;
+      notifyListeners();
+    }
+  }
+
+  Future<WenkuProfile> _readProfile() async =>
+      parseOfficialProfile(await LegacyTransport.getText(
+        '${Wenku8HtmlParser.base}userdetail.php',
+      ));
+
+  Future<void> refreshProfile() => _accountAction('正在读取账号资料', () async {
+    profile = await _readProfile();
+  });
+
 
   Future<T> _notRestored<T>(String feature) async {
     final message = '$feature功能正在恢复，当前版本暂未开放';
@@ -166,15 +233,75 @@ class WenkuAccount extends ChangeNotifier {
   Future<void> addCloud(int id) => _notRestored('云端收藏');
   Future<void> removeCloud(int id) => _notRestored('云端收藏');
   Future<void> recommend(int id) => _notRestored('作品推荐');
+  static bool _isAuthor(WenkuReview item, WenkuProfile author) =>
+      author.id > 0 && item.userId == author.id ||
+      author.username.isNotEmpty && item.user == author.username ||
+      author.nickname.isNotEmpty && item.user == author.nickname;
+
   Future<void> postReview({
     required int bookId,
     required String title,
     required String content,
-  }) => _notRestored('书评');
+  }) => _accountAction('正在发表书评', () async {
+    if (bookId <= 0 || bookId >= 0x40000000 ||
+        title.trim().isEmpty || content.trim().length < 10) {
+      throw const FormatException('作品编号或书评内容无效');
+    }
+    final author = profile ??= await _readProfile();
+    final before = await WenkuReviewFeed.readOfficial(bookId, 1, false);
+    final previousIds = before.items.map((item) => item.id).toSet();
+    // Wenku8 web form accepts only pcontent. The title is carried in the body.
+    final body = '${title.trim()}\n${content.trim()}';
+    await LegacyTransport.officialAction(
+      '${Wenku8HtmlParser.base}modules/article/reviews.php?aid=$bookId',
+      content: body,
+    );
+    // Never retry a non-idempotent POST. Only confirm by reading the site again.
+    final after = await WenkuReviewFeed.readOfficial(bookId, 1, false);
+    final newItems = after.items.where((item) =>
+        !previousIds.contains(item.id) && _isAuthor(item, author));
+    for (final item in newItems) {
+      final thread = await WenkuReviewFeed.readOfficial(item.id, 1, true);
+      if (thread.items.any((reply) =>
+          _isAuthor(reply, author) &&
+          (html.parseFragment(reply.content).text ?? '').contains(content.trim()))) {
+        return;
+      }
+    }
+    throw const FormatException('官网未确认书评已发表；草稿仍保留，请先在官网查看，避免重复提交');
+  });
+
   Future<void> replyReview({
     required int threadId,
     required String content,
-  }) => _notRestored('书评回复');
+  }) => _accountAction('正在回复书评', () async {
+    if (threadId <= 0 || content.trim().length < 2) {
+      throw const FormatException('书评主题或回复内容无效');
+    }
+    final author = profile ??= await _readProfile();
+    final before = await WenkuReviewFeed.readOfficial(threadId, 1, true);
+    final latest = before.totalPages > 1
+        ? await WenkuReviewFeed.readOfficial(threadId, before.totalPages, true)
+        : before;
+    final known = latest.items.map((item) => item.identity).toSet();
+    final base = Wenku8HtmlParser.base;
+    final url = '${base}modules/article/reviewshow.php?rid=$threadId';
+    final source = html.parse(await LegacyTransport.getText(url));
+    final form = source.querySelector('form[action*="reviewshow.php"]');
+    final action = Uri.parse(url).resolve(form?.attributes['action'] ?? '');
+    final aid = int.tryParse(action.queryParameters['aid'] ?? '') ?? 0;
+    final endpoint = '$url${aid > 0 ? '&aid=$aid' : ''}';
+    await LegacyTransport.officialAction(endpoint, content: content.trim());
+    final refreshed = await WenkuReviewFeed.readOfficial(threadId, 1, true);
+    final last = refreshed.totalPages > 1
+        ? await WenkuReviewFeed.readOfficial(threadId, refreshed.totalPages, true)
+        : refreshed;
+    if (last.items.any((item) => !known.contains(item.identity) &&
+        _isAuthor(item, author) &&
+        (html.parseFragment(item.content).text ?? '').contains(content.trim()))) return;
+    throw const FormatException('官网未确认回复已发表；草稿仍保留，请先刷新核对，避免重复提交');
+  });
+
   Future<int> mergeCloudToLocal(LibraryState state) =>
       _notRestored('云书架合并');
 

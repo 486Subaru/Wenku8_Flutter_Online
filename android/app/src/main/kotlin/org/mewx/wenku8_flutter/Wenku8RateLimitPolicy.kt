@@ -27,14 +27,23 @@ internal class Wenku8RequestPacing {
 
     fun remainingCooldownMs(now: Long): Long = (blockedUntil - now).coerceAtLeast(0L)
 
-    fun delayMs(now: Long, search: Boolean = false): Long {
-        val requestDelay = lastStartedAt?.let { 3_500L - (now - it) } ?: 0L
-        val searchDelay = if (search) lastSearchAt?.let { 5_100L - (now - it) } ?: 0L else 0L
+    fun delayMs(now: Long, search: Boolean = false, continuation: Boolean = false): Long {
+        val sustained = recentStarts.size == 3 && now - recentStarts.first() < 10_000L
+        val interval = when {
+            now < guardedUntil -> 3_500L
+            sustained -> 1_800L
+            else -> 900L
+        }
+        val requestDelay = recentStarts.lastOrNull()?.let { interval - (now - it) } ?: 0L
+        val searchDelay = if (search && !continuation) {
+            lastSearchAt?.let { 5_100L - (now - it) } ?: 0L
+        } else 0L
         return maxOf(requestDelay, searchDelay, 0L)
     }
 
     fun markStarted(now: Long, search: Boolean = false) {
-        lastStartedAt = now
+        if (recentStarts.size == 3) recentStarts.removeFirst()
+        recentStarts.addLast(now)
         if (search) lastSearchAt = now
     }
 }

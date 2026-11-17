@@ -265,6 +265,7 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
       showHeader: false,
       compactMainPageControls: true,
       onSearch: _openSearch,
+      onLoadInitial: () => _ensureCatalog(userRequested: true),
     );
     final shelf = ShelfPage(
       books: const [],
@@ -344,16 +345,24 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
     }
   }
 
-  void _ensureCatalog() {
+  void _ensureCatalog({bool userRequested = false}) {
     if (_searchOpen || _tab != 0 || !_visibleTabs.contains(0)) return;
     if (!_catalogStarted) {
+      if (_catalog.loading || _catalog.hasLoaded || _catalog.error != null) {
+        _catalogStarted = true;
+        return;
+      }
+      final repository = widget.repository;
+      final waitsForOfficialRequest =
+          repository is OfflineNovelRepository &&
+          !repository.offline &&
+          _bookSourceStore?.homepageSource == null;
+      if (waitsForOfficialRequest && !userRequested) return;
       _catalogStarted = true;
-      _catalog.loadInitial();
+      unawaited(_catalog.loadInitial());
     } else if (_catalogNeedsRefresh) {
       _catalogNeedsRefresh = false;
       unawaited(_catalog.refresh());
-    } else if (_catalog.items.isEmpty && _catalog.error != null) {
-      _catalog.retry();
     }
   }
 
@@ -567,7 +576,7 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
       _tab = index;
       _visitedTabs.add(index);
     });
-    _ensureCatalog();
+    _ensureCatalog(userRequested: index == 0);
   }
 
   Widget _tabPlane(int index) {
@@ -1050,6 +1059,7 @@ class DiscoverPage extends StatelessWidget {
     this.feed,
     this.categoryTitle,
     this.onChooseCategory,
+    this.onLoadInitial,
   });
   final List<Novel> books;
   final LibraryState state;
@@ -1060,6 +1070,7 @@ class DiscoverPage extends StatelessWidget {
   final NovelFeedController? feed;
   final String? categoryTitle;
   final void Function(BuildContext context)? onChooseCategory;
+  final VoidCallback? onLoadInitial;
 
   Widget buildHeader(BuildContext context) => Row(
     children: [
@@ -1333,13 +1344,22 @@ class DiscoverPage extends StatelessWidget {
                         Padding(
                           padding: EdgeInsets.symmetric(vertical: 90),
                           child: Center(
-                            child: AppText(
-                              feed?.loading == true
-                                  ? '正在加载发现书目…'
-                                  : feed?.error != null
-                                  ? feed!.failureMessage
-                                  : '暂无书籍',
-                            ),
+                            child: onLoadInitial != null &&
+                                    feed?.hasLoaded == false &&
+                                    feed?.loading == false &&
+                                    feed?.error == null
+                                ? GlassTextButton(
+                                    key: const ValueKey('discover-load-official'),
+                                    onPressed: onLoadInitial!,
+                                    child: const AppText('加载发现'),
+                                  )
+                                : AppText(
+                                    feed?.loading == true
+                                        ? '正在加载发现书目…'
+                                        : feed?.error != null
+                                        ? feed!.failureMessage
+                                        : '暂无书籍',
+                                  ),
                           ),
                         ),
                     ],

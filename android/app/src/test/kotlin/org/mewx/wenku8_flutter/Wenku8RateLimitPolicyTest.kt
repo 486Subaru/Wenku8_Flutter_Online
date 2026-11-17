@@ -25,8 +25,8 @@ class Wenku8RateLimitPolicyTest {
         pacing.markStarted(900L)
         assertEquals(0L, pacing.delayMs(1_800L))
         pacing.markStarted(1_800L)
-        assertEquals(900L, pacing.delayMs(2_700L))
-        assertEquals(0L, pacing.delayMs(3_600L))
+        assertEquals(2_600L, pacing.delayMs(2_700L))
+        assertEquals(0L, pacing.delayMs(5_300L))
         assertEquals(0L, pacing.delayMs(12_000L))
         pacing.markStarted(12_000L)
         assertEquals(0L, pacing.delayMs(12_900L))
@@ -50,6 +50,28 @@ class Wenku8RateLimitPolicyTest {
         assertEquals(2_600L, pacing.delayMs(resume + 900L))
         pacing.markStarted(resume + 119_100L)
         assertEquals(0L, pacing.delayMs(resume + 120_000L))
+    }
+
+    @Test fun restoringAnActiveCooldownPreservesItsRemainingTimeAndRecoverySpacing() {
+        val pacing = Wenku8RequestPacing()
+        pacing.restoreCooldown(now = 200L, wallNow = 10_000L, expiresAt = 40_000L)
+        assertEquals(30_000L, pacing.remainingCooldownMs(200L))
+        assertEquals(0L, pacing.remainingCooldownMs(30_200L))
+        pacing.markStarted(30_200L)
+        assertEquals(2_600L, pacing.delayMs(31_100L))
+        val expired = Wenku8RequestPacing()
+        expired.restoreCooldown(now = 200L, wallNow = 40_000L, expiresAt = 40_000L)
+        assertEquals(0L, expired.remainingCooldownMs(200L))
+        expired.markStarted(200L)
+        assertEquals(0L, expired.delayMs(1_100L))
+    }
+
+    @Test fun staticImagesUseConservativeSpacingFromTheFirstRequest() {
+        val pacing = Wenku8RequestPacing(minimumIntervalMs = 3_500L)
+        assertEquals(0L, pacing.delayMs(0L))
+        pacing.markStarted(0L)
+        assertEquals(2_600L, pacing.delayMs(900L))
+        assertEquals(0L, pacing.delayMs(3_500L))
     }
 
     @Test fun stopsUntilTheCooldownExpiresWithoutMovingItOnARejectedRequest() {

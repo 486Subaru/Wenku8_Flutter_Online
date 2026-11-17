@@ -13,16 +13,30 @@ internal object Wenku8RateLimitPolicy {
 }
 
 /** Accessed by the serialized official request worker, using monotonic milliseconds. */
-internal class Wenku8RequestPacing {
+internal class Wenku8RequestPacing(private val minimumIntervalMs: Long = 900L) {
+    companion object {
+        const val COOLDOWN_MS = 15 * 60_000L
+        private const val GUARDED_MS = 2 * 60_000L
+    }
     private val recentStarts = ArrayDeque<Long>(3)
     private var lastSearchAt: Long? = null
-    private var blockedUntil = 0L
+    @Volatile private var blockedUntil = 0L
     private var guardedUntil = 0L
 
     fun recordRateLimit(now: Long) {
-        blockedUntil = maxOf(blockedUntil, now + 15 * 60_000L)
-        guardedUntil = blockedUntil + 2 * 60_000L
+        setCooldown(now + COOLDOWN_MS)
+    }
+
+    fun restoreCooldown(now: Long, wallNow: Long, expiresAt: Long) {
+        if (expiresAt <= wallNow) return
+        val remaining = (expiresAt - wallNow).coerceAtMost(COOLDOWN_MS)
+        setCooldown(now + remaining)
+    }
+
+    private fun setCooldown(until: Long) {
+        guardedUntil = maxOf(blockedUntil, until) + GUARDED_MS
         recentStarts.clear()
+        blockedUntil = maxOf(blockedUntil, until)
     }
 
     fun remainingCooldownMs(now: Long): Long = (blockedUntil - now).coerceAtLeast(0L)
@@ -30,9 +44,8 @@ internal class Wenku8RequestPacing {
     fun delayMs(now: Long, search: Boolean = false, continuation: Boolean = false): Long {
         val sustained = recentStarts.size == 3 && now - recentStarts.first() < 10_000L
         val interval = when {
-            now < guardedUntil -> 3_500L
-            sustained -> 1_800L
-            else -> 900L
+            now < guardedUntil || sustained -> maxOf(3_500L, minimumIntervalMs)
+            else -> minimumIntervalMs
         }
         val requestDelay = recentStarts.lastOrNull()?.let { interval - (now - it) } ?: 0L
         val searchDelay = if (search && !continuation) {

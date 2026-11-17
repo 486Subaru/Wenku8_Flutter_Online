@@ -1348,10 +1348,13 @@ class DiscoverPage extends StatelessWidget {
                                     feed?.hasLoaded == false &&
                                     feed?.loading == false &&
                                     feed?.error == null
-                                ? GlassTextButton(
-                                    key: const ValueKey('discover-load-official'),
-                                    onPressed: onLoadInitial!,
-                                    child: const AppText('加载发现'),
+                                ? Semantics(
+                                    identifier: 'wenku8_load_discovery',
+                                    child: GlassTextButton(
+                                      key: const ValueKey('discover-load-official'),
+                                      onPressed: onLoadInitial!,
+                                      child: const AppText('加载发现'),
+                                    ),
                                   )
                                 : AppText(
                                     feed?.loading == true

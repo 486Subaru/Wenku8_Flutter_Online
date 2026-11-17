@@ -28,21 +28,46 @@ if grep -E "$official" "$traffic"; then
   exit 1
 fi
 echo 'Cold start: zero connections to official Wenku8 sites and image hosts.'
-adb shell uiautomator dump /sdcard/wenku-startup.xml
-adb pull /sdcard/wenku-startup.xml /tmp/wenku-startup.xml >/dev/null
-read -r x y < <(python3 - <<'PY'
+mkdir -p build/wenku-startup-diagnostics
+diagnostics=build/wenku-startup-diagnostics
+coordinate=''
+for attempt in $(seq 1 10); do
+  if adb shell uiautomator dump /sdcard/wenku-startup.xml; then
+    adb exec-out cat /sdcard/wenku-startup.xml > "$diagnostics/hierarchy.xml"
+    coordinate="$(python3 - "$diagnostics/hierarchy.xml" <<'PY'
 import re
+import sys
 import xml.etree.ElementTree as ET
 
-for node in ET.parse('/tmp/wenku-startup.xml').iter('node'):
-    if any('加载发现' in node.get(name, '') for name in ('text', 'content-desc')):
+for node in ET.parse(sys.argv[1]).iter('node'):
+    identifier = node.get('resource-id', '')
+    labels = node.get('text', '') + node.get('content-desc', '')
+    if 'wenku8_load_discovery' in identifier or any(
+        label in labels for label in ('加载发现', '載入發現', '加載發現')
+    ):
         x1, y1, x2, y2 = map(int, re.findall(r'\d+', node.attrib['bounds']))
-        print((x1 + x2) // 2, (y1 + y2) // 2)
-        break
-else:
-    raise SystemExit('Cannot find the explicit discovery control')
+        if x2 > x1 and y2 > y1:
+            print((x1 + x2) // 2, (y1 + y2) // 2)
+            break
 PY
-)
+)" || coordinate=''
+    if [[ -n "$coordinate" ]]; then
+      break
+    fi
+  fi
+  sleep 2
+done
+if [[ -z "$coordinate" ]]; then
+  adb exec-out screencap -p > "$diagnostics/screen.png"
+  adb logcat -d -s flutter:E AndroidRuntime:E > "$diagnostics/application.log"
+  echo 'Cannot find the explicit discovery control. The emulator screen and UI hierarchy are attached.'
+  exit 1
+fi
+if grep -E "$official" "$traffic"; then
+  echo 'The discovery page would have contacted the official hosts without input.'
+  exit 1
+fi
+read -r x y <<< "$coordinate"
 adb shell input tap "$x" "$y"
 for attempt in $(seq 1 15); do
   if grep -m1 -E "$page_official" "$traffic"; then

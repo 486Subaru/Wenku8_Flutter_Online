@@ -40,6 +40,19 @@ jobs:
           mkdir -p build/imagetest-delivery
           cp "$apk" build/imagetest-delivery/riqing-0.5.5-cold-start-arm64.apk
           sha256sum build/imagetest-delivery/riqing-0.5.5-cold-start-arm64.apk
+      - name: Upload the side-by-side ARM64 installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: riqing-0.5.5-cold-start-arm64
+          path: build/imagetest-delivery/riqing-0.5.5-cold-start-arm64.apk
+          if-no-files-found: error
+      - name: Save emulator APK for repeatable verification
+        uses: actions/upload-artifact@v4
+        with:
+          name: riqing-0.5.5-cold-start-x86_64
+          path: build/app/outputs/flutter-apk/app-x86_64-release.apk
+          if-no-files-found: error
+          retention-days: 7
       - name: Enable KVM
         run: |
           test -e /dev/kvm
@@ -57,9 +70,10 @@ jobs:
           script: bash tool/wenku_coldstart_smoke.sh
       - name: Run Android native unit tests
         run: cd android && ./gradlew :app:testDebugUnitTest --no-daemon
-      - name: Upload the side-by-side ARM64 installer
+      - name: Attach failure diagnostics
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: riqing-0.5.5-cold-start-arm64
-          path: build/imagetest-delivery/riqing-0.5.5-cold-start-arm64.apk
-          if-no-files-found: error
+          name: cold-start-diagnostics
+          path: build/wenku-startup-diagnostics
+          if-no-files-found: ignore

@@ -170,10 +170,7 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
     GlassDockItem(CupertinoIcons.folder, '本地'),
     GlassDockItem(CupertinoIcons.person_crop_circle, '我的'),
   ];
-  late final _catalog = NovelFeedController(
-    widget.repository,
-    initialItems: 60,
-  );
+  late final _catalog = NovelFeedController(widget.repository);
   late final _searchFeed = NovelFeedController(widget.repository, search: true)
     ..searchField = BookSearchField.title;
   LocalBookStore? get _localBooks => widget.repository is OfflineNovelRepository
@@ -343,7 +340,7 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
     } else {
       _ensureCatalog();
     }
-    if (_searchFeed.query.isNotEmpty) {
+    if (_searchOpen && _searchScope == 0 && _searchFeed.query.isNotEmpty) {
       unawaited(_searchFeed.refresh());
     }
   }
@@ -4077,10 +4074,12 @@ class InlineSearchResults extends StatelessWidget {
     if (books.isEmpty && feed.error != null) {
       return ContentNotice(
         icon: CupertinoIcons.wifi_exclamationmark,
-        title: needsLogin
+        title: failure is OnlineRateLimited
+            ? '官网访问限流'
+            : needsLogin
             ? failure is OnlineChallengeRequired
-                ? '需要完成官网验证'
-                : '需要连接文库账号'
+                  ? '需要完成官网验证'
+                  : '需要连接文库账号'
             : '搜索失败，请稍后重试',
         message: feed.failureMessage,
         actionLabel: needsLogin && loginAction != null
@@ -4090,7 +4089,7 @@ class InlineSearchResults extends StatelessWidget {
       );
     }
     if (books.isEmpty) {
-      if (feed.blockedItemCount > 0) {
+      if (feed.blockedItemCount > 0 && feed.searchNotice == null) {
         return ContentNotice(
           icon: CupertinoIcons.eye_slash,
           title: '当前结果已被标签屏蔽',
@@ -4119,7 +4118,11 @@ class InlineSearchResults extends StatelessWidget {
       }
       return ContentNotice(
         icon: CupertinoIcons.search,
-        title: feed.searchNotice == null ? '没有找到相关故事' : '部分搜索暂未完成',
+        title: feed.searchRateLimit != null
+            ? '官网访问限流'
+            : feed.searchNotice == null
+            ? '没有找到相关故事'
+            : '部分搜索暂未完成',
         message: feed.searchNotice ?? '试试更短的书名或作者名',
         onRetry: feed.searchNotice == null ? null : feed.refresh,
       );
@@ -7320,7 +7323,8 @@ class _ReaderPageState extends State<ReaderPage>
     for (final index in [_chapter + 1, _chapter - 1]) {
       if (index < 0 || index >= _sourceBook.chapters.length) continue;
       if (widget.repository case final OfflineNovelRepository offline) {
-        if (offline.offline &&
+        final official = _sourceBook.sourceId == null && !isLocalBook(_sourceBook.id);
+        if ((offline.offline || official) &&
             !isLocalBook(widget.novel.id) &&
             offline.cache
                     .book(widget.novel.id)

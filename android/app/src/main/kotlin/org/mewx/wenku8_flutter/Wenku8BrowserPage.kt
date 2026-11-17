@@ -113,16 +113,17 @@ internal object Wenku8BrowserPage {
                             if (closed.get() || view.url != finalUrl) return@evaluateJavascript
                             val html = runCatching { JSONTokener(encoded).nextValue() as? String }.getOrNull().orEmpty()
                             when {
-                                Wenku8RateLimitPolicy.isRateLimited(httpStatus, html) ->
+                                Wenku8RateLimitPolicy.isCloudflareRateLimited(html) ->
                                     finish(failure = Failure("WEB_RATE_LIMITED", "官网 Cloudflare 1015 限流，请等待访问恢复"))
+                                httpStatus == 429 ->
+                                    finish(failure = Failure("WEB_RATE_LIMITED", "官网拒绝了过于频繁的请求（HTTP 429）"))
                                 Wenku8ChallengePolicy.isChallenge(html, mitigated) ->
                                     finish(failure = Failure("WEB_CHALLENGE", "官网仍要求浏览器验证，请在可见官网页面完成验证"))
                                 httpStatus == 401 ->
                                     finish(failure = Failure("WEB_LOGIN_REQUIRED", "请先登录轻小说文库账号"))
                                 httpStatus == 403 ->
                                     finish(failure = Failure("WEB_BLOCKED", "官网拒绝浏览器请求，请稍后重试"))
-                                httpStatus == 429 ->
-                                    finish(failure = Failure("WEB_RATE_LIMITED", "官网请求过于频繁，请稍后重试"))
+
                                 httpStatus !in 200..299 ->
                                     finish(failure = Failure("WEB_HTTP_ERROR", "官网浏览器返回 HTTP $httpStatus"))
                                 html.isBlank() ->

@@ -2,6 +2,7 @@ import 'book_search.dart';
 import 'book_sources.dart';
 import 'catalog.dart';
 import 'legacy_transport.dart';
+import 'online_component.dart';
 import 'publication_catalog.dart';
 import 'tag_catalogue.dart';
 import 'wenku8_html_parser.dart';
@@ -15,6 +16,10 @@ typedef _WenkuSearchRequest = Future<String> Function(
   String field,
   int page,
 });
+
+class _MissingWenkuBook extends FormatException {
+  const _MissingWenkuBook() : super('官网没有返回有效的书籍详情');
+}
 
 /// Official-site repository. It reads pages through the Android WebView-backed
 /// transport and never downloads or exports whole-book files.
@@ -245,10 +250,12 @@ class LegacyWenkuRepository extends NovelRepository
     final customPages = await customFuture;
     // Preserve usable optional-source results, but never disguise a failed
     // official search as a genuine zero-result response.
-    final failures = <BookSearchField, Object>{
-      ...primary.searchFailures,
-      for (final result in customPages) ...result.searchFailures,
-    };
+    final failures = <BookSearchField, Object>{...primary.searchFailures};
+    for (final result in customPages) {
+      for (final entry in result.searchFailures.entries) {
+        failures.putIfAbsent(entry.key, () => entry.value);
+      }
+    }
     // Incomplete search scope stays visible even if no site returned a result.
     final merged = <int, Novel>{
       for (final book in primary.items) book.id: book,
@@ -335,7 +342,12 @@ class LegacyWenkuRepository extends NovelRepository
       if (id == null || id <= 0 || page > 1) {
         return NovelPage(items: const [], page: page, totalPages: 0);
       }
-      final book = await find(id);
+      Novel? book;
+      try {
+        book = (await _loadDetail(id)).book;
+      } on _MissingWenkuBook {
+        book = null;
+      }
       return NovelPage(
         items: book == null ? const [] : [book],
         page: page,
@@ -381,8 +393,15 @@ class LegacyWenkuRepository extends NovelRepository
     }
 
     final byTitle = await independent(BookSearchField.title, 'articlename');
-    // A native rate-limit pause rejects the second request without network access.
-    final byAuthor = await independent(BookSearchField.author, 'author');
+    final titleFailure = byTitle.searchFailures[BookSearchField.title];
+    final byAuthor = titleFailure is OnlineRateLimited
+        ? NovelPage(
+            items: const [],
+            page: page,
+            totalPages: page,
+            searchFailures: {BookSearchField.author: titleFailure},
+          )
+        : await independent(BookSearchField.author, 'author');
     final unique = <int, Novel>{
       for (final book in byTitle.items) book.id: book,
       for (final book in byAuthor.items) book.id: book,
@@ -496,7 +515,7 @@ class LegacyWenkuRepository extends NovelRepository
     }
     final source = await _request(_detailUrl(id), referer: _base + 'index.php');
     final parsed = Wenku8HtmlParser.parseBookDetail(source, id, seed: seed);
-    if (parsed == null) throw const FormatException('官网没有返回有效的书籍详情');
+    if (parsed == null) throw const _MissingWenkuBook();
     _details[id] = parsed.book;
     if (parsed.novelPrefix.isNotEmpty) {
       _novelPrefixes[id] = parsed.novelPrefix;

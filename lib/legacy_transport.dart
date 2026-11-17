@@ -24,6 +24,14 @@ abstract final class LegacyTransport {
     if (failure.code == 'WEB_CHALLENGE') {
       throw const OnlineChallengeRequired();
     }
+    if (failure.code == 'WEB_RATE_LIMITED') {
+      final details = failure.details;
+      final seconds = details is Map ? details['retryAfterSeconds'] : null;
+      throw OnlineRateLimited(
+        failure.message ?? '官网访问限流',
+        retryAfterSeconds: seconds is int ? seconds : null,
+      );
+    }
     throw FormatException(failure.message ?? '文库官网暂时不可用，请稍后重试');
   }
 

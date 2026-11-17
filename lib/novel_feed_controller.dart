@@ -6,6 +6,7 @@ import 'package:flutter/services.dart' show PlatformException;
 import 'catalog.dart';
 import 'book_tag_catalog.dart';
 import 'book_search.dart';
+import 'online_component.dart';
 import 'tag_catalogue.dart';
 import 'blocked_tags.dart';
 import 'publication_catalog.dart';
@@ -75,13 +76,24 @@ class NovelFeedController extends ChangeNotifier {
   Set<String> get tagSuggestions => Set.unmodifiable(_tagSuggestions);
   int page = 0;
   int? totalItems;
-  Set<BookSearchField> incompleteSearchFields = const {};
+  Map<BookSearchField, Object> _searchFailures = const {};
+  Set<BookSearchField> get incompleteSearchFields =>
+      Set.unmodifiable(_searchFailures.keys);
+
+  OnlineRateLimited? get searchRateLimit {
+    final failure = error;
+    if (failure is OnlineRateLimited) return failure;
+    return _searchFailures.values.whereType<OnlineRateLimited>().firstOrNull;
+  }
+
   String? get searchNotice {
-    if (incompleteSearchFields.isEmpty) return null;
-    final fields = incompleteSearchFields.map((field) => field.label).join('、');
-    return items.isEmpty
+    if (_searchFailures.isEmpty) return null;
+    final fields = _searchFailures.keys.map((field) => field.label).join('、');
+    final status = items.isEmpty
         ? '$fields搜索暂未完成，目前没有可显示的结果。'
         : '$fields搜索暂未完成，已保留其他搜索结果。';
+    final rateLimit = searchRateLimit;
+    return rateLimit == null ? status : '${rateLimit.message} $status';
   }
 
   bool hasMore = true;
@@ -325,7 +337,7 @@ class NovelFeedController extends ChangeNotifier {
     _visibleItems = null;
     page = 0;
     totalItems = null;
-    incompleteSearchFields = const {};
+    _searchFailures = const {};
     _tagProgress = null;
     hasMore = true;
     error = null;
@@ -354,9 +366,9 @@ class NovelFeedController extends ChangeNotifier {
     final retainedCount = _items.length;
     final retainedPage = page;
     var pending = replace ? <Novel>[] : _items;
-    final pendingIncompleteFields = replace
-        ? <BookSearchField>{}
-        : {...incompleteSearchFields};
+    final pendingFailures = <BookSearchField, Object>{
+      if (!replace) ..._searchFailures,
+    };
     loading = true;
     _tagProgress = null;
     refreshing = retaining;
@@ -428,7 +440,13 @@ class NovelFeedController extends ChangeNotifier {
         if (result.page != requestedPage) {
           throw const FormatException('分页游标不匹配');
         }
-        pendingIncompleteFields.addAll(result.searchFailures.keys);
+        for (final entry in result.searchFailures.entries) {
+          if (entry.value is OnlineRateLimited) {
+            pendingFailures[entry.key] = entry.value;
+          } else {
+            pendingFailures.putIfAbsent(entry.key, () => entry.value);
+          }
+        }
         final oldCount = pending.length;
         final merged = <int, Novel>{
           if (!replacing)
@@ -469,7 +487,7 @@ class NovelFeedController extends ChangeNotifier {
           page = requestedPage;
           hasMore = result.hasMore;
           totalItems = result.totalItems;
-          incompleteSearchFields = Set.unmodifiable(pendingIncompleteFields);
+          _searchFailures = Map.unmodifiable(pendingFailures);
         }
         if (complete) break;
         if (!retaining) notifyListeners();
@@ -547,11 +565,11 @@ class NovelFeedController extends ChangeNotifier {
     totalItems = groups.every((group) => group.totalItems != null)
         ? groups.fold<int>(0, (total, group) => total + group.totalItems!)
         : null;
-    incompleteSearchFields = Set.unmodifiable({
-      for (final group in groups) ...[
-        if (group.error != null) group.searchField,
-        ...group.incompleteSearchFields,
-      ],
+    _searchFailures = Map.unmodifiable({
+      for (final group in groups) ...{
+        ...group._searchFailures,
+        if (group.error case final failure?) group.searchField: failure,
+      },
     });
     error = groups.every((group) => group.error != null)
         ? groups.first.error

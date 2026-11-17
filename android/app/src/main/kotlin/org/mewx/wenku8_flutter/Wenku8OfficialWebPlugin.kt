@@ -48,7 +48,11 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
         val lastRequestAt: AtomicLong = AtomicLong(0L),
     )
     private data class LightNovelSession(val host: String, val securityKey: String, val uid: String)
-    private class WebFailure(val code: String, message: String) : Exception(message)
+    private class WebFailure(
+        val code: String,
+        message: String,
+        val details: Map<String, Any>? = null,
+    ) : Exception(message)
 
     companion object {
         private const val CHANNEL = "org.mewx.wenku8/official_web"
@@ -69,11 +73,10 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
     private var activityBinding: ActivityPluginBinding? = null
     private var pendingLogin: MethodChannel.Result? = null
     private var pendingSourceLogin: MethodChannel.Result? = null
-    private var lastRequestAt = 0L
-    private var lastSearchAt = 0L
-    @Volatile private var blockedUntil = 0L
+    private val pacing = Wenku8RequestPacing()
+    private var rateLimitReason = "官网访问限流"
     private lateinit var appContext: Context
-    private var preferBrowser = false
+    private var preferBrowserUntil = 0L
     private var userAgent = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
@@ -162,12 +165,7 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
                 // The official form omits the page parameter on its initial request.
                 val url = BASE + "/modules/article/search.php?searchtype=" + field +
                     "&searchkey=" + encoded + (if (page > 1) "&page=" + page else "")
-                dispatch(result) {
-                    val delay = 5100L - (SystemClock.elapsedRealtime() - lastSearchAt)
-                    if (lastSearchAt != 0L && delay > 0) Thread.sleep(delay)
-                    lastSearchAt = SystemClock.elapsedRealtime()
-                    requestOfficialText(url, BASE + "/index.php")
-                }
+                dispatch(result) { requestOfficialText(url, BASE + "/index.php") }
             }
             "officialAction" -> {
                 val rawUrl = call.argument<String>("url")
@@ -194,13 +192,8 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
                         }
                         ("pcontent=" + URLEncoder.encode(it, "GBK")).toByteArray(Charsets.US_ASCII)
                     }
-                    waitForRequestSlot()
                     // Never replay a potentially non-idempotent write.
-                    val reply = try {
-                        Wenku8BrowserPage.read(appContext, url, BASE + "/index.php", MAX_TEXT_BYTES, body)
-                    } catch (failure: Wenku8BrowserPage.Failure) {
-                        throw WebFailure(failure.code, failure.message ?: "官网操作结果未确认")
-                    }
+                    val reply = readOfficialBrowser(url, BASE + "/index.php", body)
                     if (looksLikeLoginPage(reply.html, URL(reply.url))) {
                         throw WebFailure("WEB_LOGIN_REQUIRED", "请先登录轻小说文库账号")
                     }
@@ -300,7 +293,7 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
                 val value = work()
                 main.post { result.success(value) }
             } catch (failure: WebFailure) {
-                main.post { result.error(failure.code, failure.message, null) }
+                main.post { result.error(failure.code, failure.message, failure.details) }
             } catch (_: Exception) {
                 main.post { result.error("WEB_NETWORK_ERROR", "网络请求失败，请检查网络后重试", null) }
             }
@@ -352,7 +345,7 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
     /**
      * Use the site's ordinary browser path when its HTML endpoint rejects the
      * native client. Never solve challenges automatically or share cookies across domains.
-     * Once the browser path is needed, keep using it for this app session.
+     * Remember a successful browser path briefly to avoid repeated challenges.
      */
     private fun requestOfficialText(rawUrl: String, referer: String?): String {
         val url = Wenku8SessionCookies.routeOfficialPage(rawUrl)
@@ -360,27 +353,35 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
         if (!Wenku8UrlPolicy.isOfficialPage(url)) {
             throw WebFailure("WEB_BAD_URL", "网页地址不在允许访问的文库域名内")
         }
-        if (!preferBrowser) {
+        if (SystemClock.elapsedRealtime() >= preferBrowserUntil) {
             try {
                 val reply = request(url, routedReferer, MAX_TEXT_BYTES, image = false)
                 return decode(reply.bytes, reply.contentType)
             } catch (failure: WebFailure) {
                 // A refusal is not a challenge to replay through another client.
                 if (failure.code != "WEB_CHALLENGE") throw failure
-                preferBrowser = true
             }
         }
-        waitForRequestSlot()
-        val reply = try {
-            Wenku8BrowserPage.read(appContext, url, routedReferer, MAX_TEXT_BYTES)
-        } catch (failure: Wenku8BrowserPage.Failure) {
-            if (failure.code == "WEB_RATE_LIMITED") recordRateLimit()
-            throw WebFailure(failure.code, failure.message ?: "官网浏览器请求失败")
+        val reply = readOfficialBrowser(url, routedReferer)
+        if (SystemClock.elapsedRealtime() >= preferBrowserUntil) {
+            preferBrowserUntil = SystemClock.elapsedRealtime() + 2 * 60_000L
         }
         if (looksLikeLoginPage(reply.html, URL(reply.url))) {
             throw WebFailure("WEB_LOGIN_REQUIRED", "请先登录轻小说文库账号")
         }
         return reply.html
+    }
+
+    private fun readOfficialBrowser(url: String, referer: String?, body: ByteArray? = null): Wenku8BrowserPage.Page {
+        waitForRequestSlot()
+        return try {
+            Wenku8BrowserPage.read(appContext, url, referer, MAX_TEXT_BYTES, body)
+        } catch (failure: Wenku8BrowserPage.Failure) {
+            if (failure.code == "WEB_RATE_LIMITED") {
+                recordRateLimit(failure.message ?: "官网请求过于频繁")
+            }
+            throw WebFailure(failure.code, failure.message ?: "官网浏览器请求失败")
+        }
     }
 
     private fun request(rawUrl: String, referer: String?, maxBytes: Int, image: Boolean): Reply {
@@ -447,9 +448,11 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
                 val challenge = !image && Wenku8ChallengePolicy.isChallenge(
                     body, connection.getHeaderField("cf-mitigated"),
                 )
-                if (!image && Wenku8RateLimitPolicy.isRateLimited(status, body)) {
-                    recordRateLimit()
-                    throw WebFailure("WEB_RATE_LIMITED", "官网 Cloudflare 1015 限流；已暂停本机官网请求，请等待恢复")
+                if (Wenku8RateLimitPolicy.isCloudflareRateLimited(body)) {
+                    recordRateLimit("官网 Cloudflare 1015 限流")
+                }
+                if (status == 429) {
+                    recordRateLimit("官网拒绝了过于频繁的请求（HTTP 429）")
                 }
                 if (challenge) {
                     throw WebFailure("WEB_CHALLENGE", "官网仍要求浏览器验证；请在官网完成验证后重试")
@@ -460,10 +463,7 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
                 if (status == 403) {
                     throw WebFailure("WEB_BLOCKED", "官网拒绝了应用的网络请求，请检查网络或稍后重试")
                 }
-                if (status == 429) {
-                    recordRateLimit()
-                    throw WebFailure("WEB_RATE_LIMITED", "官网请求过于频繁，已暂停请求；请稍后再试")
-                }
+
                 if (status !in 200..299) throw WebFailure("WEB_HTTP_ERROR", "官网返回 HTTP " + status)
 
                 if (!image) {
@@ -722,23 +722,29 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
         if (image) Wenku8UrlPolicy.isAllowedImage(url.toString())
         else Wenku8UrlPolicy.isOfficialPage(url.toString())
 
-    private fun recordRateLimit() {
-        // This is a local pause, not a promise that the site will lift its ban.
-        blockedUntil = maxOf(blockedUntil, SystemClock.elapsedRealtime() + 15 * 60_000L)
+    private fun recordRateLimit(reason: String): Nothing {
+        rateLimitReason = reason
+        preferBrowserUntil = 0L
+        pacing.recordRateLimit(SystemClock.elapsedRealtime())
+        throw rateLimitFailure(pacing.remainingCooldownMs(SystemClock.elapsedRealtime()))
+    }
+
+    private fun rateLimitFailure(remaining: Long): WebFailure {
+        val seconds = (remaining + 999L) / 1000L
+        return WebFailure(
+            "WEB_RATE_LIMITED",
+            rateLimitReason,
+            mapOf("retryAfterSeconds" to seconds),
+        )
     }
 
     private fun waitForRequestSlot() {
         val now = SystemClock.elapsedRealtime()
-        if (now < blockedUntil) {
-            throw WebFailure("WEB_RATE_LIMITED", "官网仍处于访问限制期间，APP 已停止自动请求，请稍后重试")
-        }
-        // Reader, discovery, searches and book caching share one official queue.
-        val delay = 3500L - (now - lastRequestAt)
-        if (lastRequestAt != 0L && delay > 0) Thread.sleep(delay)
-        if (SystemClock.elapsedRealtime() < blockedUntil) {
-            throw WebFailure("WEB_RATE_LIMITED", "官网限流期间已暂停请求")
-        }
-        lastRequestAt = SystemClock.elapsedRealtime()
+        val remaining = pacing.remainingCooldownMs(now)
+        if (remaining > 0L) throw rateLimitFailure(remaining)
+        val delay = pacing.delayMs(now)
+        if (delay > 0L) Thread.sleep(delay)
+        pacing.markStarted(SystemClock.elapsedRealtime())
     }
 
     private fun readBounded(input: java.io.InputStream, limit: Int): ByteArray {

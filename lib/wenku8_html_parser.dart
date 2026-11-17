@@ -3,6 +3,7 @@ import 'package:html/dom.dart';
 import 'package:html/parser.dart' show parse;
 
 import 'catalog.dart';
+import 'online_component.dart';
 import 'publication_catalog.dart';
 
 class Wenku8BookDetail {
@@ -72,6 +73,14 @@ abstract final class Wenku8HtmlParser {
   /// Unexpected HTML must not be reported as a genuine empty result.
   static NovelPage parseSearchPage(String source, int page) {
     final document = parse(source);
+    final title = document.querySelector('title')?.text.toLowerCase() ?? '';
+    final body = document.body?.text.toLowerCase() ?? '';
+    if (title.contains('error 1015') ||
+        (body.contains('cloudflare') &&
+            (body.contains('error 1015') ||
+                body.contains('you are being rate limited')))) {
+      throw OnlineRateLimited('官网 Cloudflare 1015 限流');
+    }
     final root = document.querySelector('#content') ??
         document.body ??
         document.documentElement;

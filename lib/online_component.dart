@@ -18,6 +18,22 @@ class OnlineChallengeRequired implements Exception {
   String toString() => '官网要求浏览器验证，请先完成官方网页登录验证后重试';
 }
 
+class OnlineRateLimited extends FormatException {
+  OnlineRateLimited(String reason, {this.retryAfterSeconds})
+    : super(_message(reason, retryAfterSeconds));
+
+  final int? retryAfterSeconds;
+
+  static String _message(String reason, int? seconds) {
+    if (seconds == null || seconds <= 0) return '$reason，请稍后重试。';
+    final duration = seconds < 60 ? '$seconds 秒' : '${(seconds + 59) ~/ 60} 分钟';
+    return '$reason。应用已暂停官网请求，约 $duration 后可再试。';
+  }
+
+  @override
+  String toString() => message;
+}
+
 Future<T> unavailableOnline<T>() =>
     Future<T>.error(const OnlineComponentUnavailable());
 

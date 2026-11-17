@@ -9,7 +9,11 @@
 >
 > **仅支持轻小说文库及本地导入，不再支持其他源或自定义书源。** 支持 Android、iOS 与 HarmonyOS，并非轻小说文库网站的官方应用。
 
-## 下载与更新
+## 日轻 Android
+
+[下载最新版](https://github.com/486Subaru/Wenku8_Flutter_Online/releases/latest) · [日轻发布分支](https://github.com/486Subaru/Wenku8_Flutter_Online/tree/release/riqing-0.5.6)
+
+## 上游项目的下载与更新状态
 
 **公开下载与应用内更新已下架。** GitHub 所有发行版均为草稿，镜像不再提供安装包或发行元数据。
 

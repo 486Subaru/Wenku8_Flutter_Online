@@ -9,7 +9,11 @@
 >
 > **Only Wenku8 and local imports are supported. Other sources and custom book sources are no longer supported.** The app supports Android, iOS, and HarmonyOS and is not an official Wenku8 app.
 
-## Download and update
+## 日轻 Android
+
+[下载最新版](https://github.com/486Subaru/Wenku8_Flutter_Online/releases/latest) · [日轻发布分支](https://github.com/486Subaru/Wenku8_Flutter_Online/tree/release/riqing-0.5.6)
+
+## Upstream download and update status
 
 **Public downloads and app updates are currently withdrawn.** All GitHub releases are drafts, and the mirror no longer offers installation packages or release metadata.
 

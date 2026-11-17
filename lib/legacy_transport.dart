@@ -176,6 +176,24 @@ abstract final class LegacyTransport {
     }
   }
 
+  /// Open an official TXT pack in a browser. Unlike chapter caching, this
+  /// does not issue hundreds of requests to the main website.
+  static Future<void> openPackDownload(int bookId, {required String type, required int node}) async {
+    if (bookId <= 0 || bookId >= 0x40000000 ||
+        !const {'txt', 'utf8', 'big5'}.contains(type) || node < 1 || node > 2) {
+      throw const FormatException('官网整本下载参数无效');
+    }
+    try {
+      await channel.invokeMethod<void>('openPackDownload', {
+        'bookId': bookId, 'type': type, 'node': node,
+      });
+    } on MissingPluginException {
+      throw const OnlineComponentUnavailable();
+    } on PlatformException catch (failure) {
+      _throwPlatform(failure);
+    }
+  }
+
   static Future<Uint8List> getBytes(String url, {String? referer}) async {
     try {
       final value = await channel.invokeMethod<Uint8List>('getBytes', {

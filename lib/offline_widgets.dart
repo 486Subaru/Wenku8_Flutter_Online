@@ -9,6 +9,7 @@ import 'app_interactions.dart';
 import 'catalog.dart';
 import 'offline_cache.dart';
 import 'offline_repository.dart';
+import 'legacy_transport.dart';
 
 class OfflineBookStatus extends StatelessWidget {
   const OfflineBookStatus({
@@ -242,6 +243,30 @@ class OfflineVolumeCacheSheet extends StatefulWidget {
 }
 
 class _OfflineVolumeCacheSheetState extends State<OfflineVolumeCacheSheet> {
+  Future<void> _officialTxtDownloads() async {
+    final choice = await showGlassMenu<(String, int)>(
+      context: context,
+      reduceMotion: MediaQuery.disableAnimationsOf(context),
+      builder: (menu) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final option in const [('utf8', '简体 UTF-8'), ('txt', '简体 GBK'), ('big5', '繁体 Big5')])
+            for (final node in [1, 2])
+              GlassMenuItem(
+                label: '${option.$2} · 载点$node',
+                onPressed: () => Navigator.pop(menu, (option.$1, node)),
+              ),
+        ],
+      ),
+    );
+    if (!mounted || choice == null) return;
+    try {
+      await LegacyTransport.openPackDownload(widget.novel.id, type: choice.$1, node: choice.$2);
+    } catch (error) {
+      if (mounted) showNovelFeedback(context, error.toString());
+    }
+  }
+
   late Future<void> _loaded = widget.repository.loadCache();
   late final _volumes = NovelVolume.of(widget.novel.chapters);
   late final _ids = {
@@ -334,6 +359,12 @@ class _OfflineVolumeCacheSheetState extends State<OfflineVolumeCacheSheet> {
                 GlassTextButton(
                   onPressed: () => repository.cancel(widget.novel.id),
                   child: const AppText('取消缓存'),
+                ),
+              if (widget.novel.sourceId == null && widget.novel.id > 0 &&
+                  widget.novel.id < 0x40000000)
+                GlassTextButton(
+                  onPressed: _officialTxtDownloads,
+                  child: const AppText('官网整本TXT'),
                 ),
               GlassIconButton(
                 icon: CupertinoIcons.xmark,

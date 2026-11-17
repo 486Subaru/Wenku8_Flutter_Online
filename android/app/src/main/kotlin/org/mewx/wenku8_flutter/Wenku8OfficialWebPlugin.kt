@@ -3,6 +3,7 @@ package org.mewx.wenku8_flutter
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -204,6 +205,24 @@ internal class Wenku8OfficialWebPlugin : FlutterPlugin,
                         throw WebFailure("WEB_LOGIN_REQUIRED", "请先登录轻小说文库账号")
                     }
                     reply.html
+                }
+            }
+            "openPackDownload" -> {
+                val id = call.argument<Int>("bookId") ?: 0
+                val format = call.argument<String>("type").orEmpty()
+                val node = call.argument<Int>("node") ?: 0
+                if (id <= 0 || id >= 0x40000000 || format !in setOf("txt", "utf8", "big5") ||
+                    node !in 1..2) {
+                    return result.error("WEB_BAD_DOWNLOAD", "官网整本 TXT 下载参数无效", null)
+                }
+                val current = activityBinding?.activity
+                    ?: return result.error("WEB_NO_ACTIVITY", "请在 APP 前台打开下载链接", null)
+                val url = "https://dl.wenku8.com/down.php?type=$format&node=$node&id=$id"
+                try {
+                    current.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                    result.success(null)
+                } catch (_: Exception) {
+                    result.error("WEB_DOWNLOAD_OPEN_FAILED", "没有可以打开 TXT 下载的浏览器", null)
                 }
             }
             "hasSession" -> result.success(Wenku8SessionCookies.hasSession())

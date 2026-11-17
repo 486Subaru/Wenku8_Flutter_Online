@@ -86,14 +86,20 @@ class NovelFeedController extends ChangeNotifier {
     return _searchFailures.values.whereType<OnlineRateLimited>().firstOrNull;
   }
 
+  OnlineAccessRequired? get searchAccessRequired {
+    final failure = error;
+    if (failure is OnlineAccessRequired) return failure;
+    return _searchFailures.values.whereType<OnlineAccessRequired>().firstOrNull;
+  }
+
   String? get searchNotice {
     if (_searchFailures.isEmpty) return null;
     final fields = _searchFailures.keys.map((field) => field.label).join('、');
     final status = items.isEmpty
         ? '$fields搜索暂未完成，目前没有可显示的结果。'
         : '$fields搜索暂未完成，已保留其他搜索结果。';
-    final rateLimit = searchRateLimit;
-    return rateLimit == null ? status : '${rateLimit.message} $status';
+    final reason = searchRateLimit?.message ?? searchAccessRequired?.message;
+    return reason == null ? status : '$reason $status';
   }
 
   bool hasMore = true;
@@ -114,6 +120,7 @@ class NovelFeedController extends ChangeNotifier {
     if (failure is PublicationConnectionRequired) {
       return '此出版文库需要官网账号连接，请到账号页确认后重试。';
     }
+    if (failure is OnlineAccessRequired) return failure.message;
     if (failure is FormatException && failure.message.toString().isNotEmpty) {
       return failure.message.toString();
     }
@@ -458,7 +465,7 @@ class NovelFeedController extends ChangeNotifier {
           throw const FormatException('分页游标不匹配');
         }
         for (final entry in result.searchFailures.entries) {
-          if (entry.value is OnlineRateLimited) {
+          if (entry.value is OnlineRateLimited || entry.value is OnlineAccessRequired) {
             pendingFailures[entry.key] = entry.value;
           } else {
             pendingFailures.putIfAbsent(entry.key, () => entry.value);

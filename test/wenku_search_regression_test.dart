@@ -51,6 +51,71 @@ void main() {
     expect(feed.items, isEmpty);
   });
 
+  for (final accessError in <OnlineAccessRequired>[
+    const OnlineChallengeRequired(),
+    const OnlineAuthenticationRequired(),
+    const OnlineRedirectBlocked(origin: 'https://example.com'),
+  ]) {
+    test('${accessError.runtimeType} skips author and explains empty search', () async {
+      final requests = <String>[];
+      final repository = LegacyWenkuRepository(
+        searchRequest: (query, {field = 'articlename', page = 1}) async {
+          requests.add(field);
+          throw accessError;
+        },
+      );
+      final feed = NovelFeedController(repository, search: true);
+      addTearDown(feed.dispose);
+
+      await feed.searchFor('测试');
+
+      expect(requests, ['articlename']);
+      expect(feed.items, isEmpty);
+      expect(feed.searchAccessRequired, same(accessError));
+      expect(feed.searchNotice, contains(accessError.message));
+    });
+  }
+
+  test('a blocked author search preserves title results and access guidance', () async {
+    const accessError = OnlineChallengeRequired();
+    final repository = LegacyWenkuRepository(
+      searchRequest: (query, {field = 'articlename', page = 1}) async {
+        if (field == 'author') throw accessError;
+        return '<a href="/book/123.htm">测试作品</a>';
+      },
+    );
+    final feed = NovelFeedController(repository, search: true);
+    addTearDown(feed.dispose);
+
+    await feed.searchFor('测试');
+
+    expect(feed.items.single.id, 123);
+    expect(feed.incompleteSearchFields, {BookSearchField.author});
+    expect(feed.searchAccessRequired, same(accessError));
+  });
+
+  test('official transport distinguishes interactive verification and unsafe redirect', () async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    addTearDown(() => messenger.setMockMethodCallHandler(LegacyTransport.channel, null));
+
+    messenger.setMockMethodCallHandler(LegacyTransport.channel, (call) async {
+      throw PlatformException(code: 'WEB_VERIFICATION_REQUIRED');
+    });
+    await expectLater(LegacyTransport.search('测试'), throwsA(isA<OnlineChallengeRequired>()));
+
+    messenger.setMockMethodCallHandler(LegacyTransport.channel, (call) async {
+      throw PlatformException(
+        code: 'WEB_REDIRECT_BLOCKED',
+        details: {'origin': 'https://example.com'},
+      );
+    });
+    await expectLater(
+      LegacyTransport.search('测试'),
+      throwsA(isA<OnlineRedirectBlocked>().having((error) => error.origin, 'origin', 'https://example.com')),
+    );
+  });
+
   test('official transport preserves the limit code and remaining time', () async {
     TestWidgetsFlutterBinding.ensureInitialized();
     final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;

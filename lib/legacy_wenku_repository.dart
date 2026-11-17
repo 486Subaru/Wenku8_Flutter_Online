@@ -419,12 +419,17 @@ class LegacyWenkuRepository extends NovelRepository
     if (byTitle.items.isNotEmpty) onTitle?.call(byTitle.items);
     if (current?.call() == false) return byTitle;
     final titleFailure = byTitle.searchFailures[BookSearchField.title];
-    final byAuthor = titleFailure is OnlineRateLimited
+    final terminalFailure = switch (titleFailure) {
+      OnlineRateLimited error => error,
+      OnlineAccessRequired error => error,
+      _ => null,
+    };
+    final byAuthor = terminalFailure != null
         ? NovelPage(
             items: const [],
             page: page,
             totalPages: page,
-            searchFailures: {BookSearchField.author: titleFailure},
+            searchFailures: {BookSearchField.author: terminalFailure},
           )
         : await independent(BookSearchField.author, 'author');
     final unique = <int, Novel>{

@@ -79,6 +79,9 @@ class NovelFeedController extends ChangeNotifier {
   Map<BookSearchField, Object> _searchFailures = const {};
   Map<int, Map<BookSearchField, Object>> _searchFailuresByPage = const {};
   BookSearchSession _searchSession = BookSearchSession();
+  bool _resumeSearchRefresh = false;
+  bool _deferBackgroundPaging = false;
+  bool _backgroundPagingDeferred = false;
   Set<BookSearchField> get incompleteSearchFields =>
       Set.unmodifiable(_searchFailures.keys);
 
@@ -219,13 +222,27 @@ class NovelFeedController extends ChangeNotifier {
   }
 
   Future<void> loadInitial() => _load(replace: true);
+
+  /// Finish the current request but do not start another automatic page.
+  /// Resuming returns whether an interrupted load needs to be restarted.
+  bool deferBackgroundPaging(bool defer) {
+    _deferBackgroundPaging = defer;
+    if (defer) return false;
+    final wasDeferred = _backgroundPagingDeferred;
+    _backgroundPagingDeferred = false;
+    return wasDeferred;
+  }
+
   Future<void> loadMore() async {
-    if (loading || !hasMore || error != null) return;
+    if (loading || !hasMore || error != null || _resumeSearchRefresh) return;
     await _load(replace: false);
   }
 
   Future<void> retry() {
     if (loading) return Future.value();
+    if (_resumeSearchRefresh) {
+      return _load(replace: true, force: true, resumeSearchRefresh: true);
+    }
     if (search && _searchFailuresByPage.isNotEmpty) {
       final pages = _searchFailuresByPage.keys.toList()..sort();
       return _load(replace: false, force: true, retryPages: pages);
@@ -353,6 +370,7 @@ class NovelFeedController extends ChangeNotifier {
     totalItems = null;
     _searchFailures = const {};
     _searchFailuresByPage = const {};
+    _resumeSearchRefresh = false;
     _searchSession = BookSearchSession();
     _tagProgress = null;
     hasMore = true;
@@ -366,6 +384,7 @@ class NovelFeedController extends ChangeNotifier {
     required bool replace,
     bool force = false,
     List<int> retryPages = const [],
+    bool resumeSearchRefresh = false,
   }) async {
     if (_disposed) return;
     if (!replace && loading) return;
@@ -374,7 +393,10 @@ class NovelFeedController extends ChangeNotifier {
       return;
     }
     final generation = replace ? ++_generation : _generation;
-    if (replace) _searchSession = BookSearchSession();
+    if (replace) {
+      _resumeSearchRefresh = false;
+      if (!resumeSearchRefresh) _searchSession = BookSearchSession();
+    }
     final session = _searchSession;
     var retryIndex = 0;
     var requestedPage = retryPages.firstOrNull ?? (replace ? 1 : page + 1);
@@ -486,6 +508,12 @@ class NovelFeedController extends ChangeNotifier {
         } else {
           pendingFailures[requestedPage] = result.searchFailures;
         }
+        if (retaining && search && result.searchFailures.isNotEmpty) {
+          _resumeSearchRefresh = true;
+          refreshFailed = true;
+          _updateSearchFailures(pendingFailures);
+          break;
+        }
         final oldCount = pending.length;
         final merged = <int, Novel>{
           if (!replacing)
@@ -528,18 +556,7 @@ class NovelFeedController extends ChangeNotifier {
             hasMore = result.hasMore;
             totalItems = result.totalItems;
           }
-          _searchFailuresByPage = Map.unmodifiable(pendingFailures);
-          final failures = <BookSearchField, Object>{};
-          for (final failedPage in pendingFailures.values) {
-            for (final entry in failedPage.entries) {
-              if (entry.value is OnlineRateLimited || entry.value is OnlineAccessRequired) {
-                failures[entry.key] = entry.value;
-              } else {
-                failures.putIfAbsent(entry.key, () => entry.value);
-              }
-            }
-          }
-          _searchFailures = Map.unmodifiable(failures);
+          _updateSearchFailures(pendingFailures);
         }
         if (retryPages.isNotEmpty) {
           if (result.searchFailures.isNotEmpty || ++retryIndex == retryPages.length) {
@@ -549,6 +566,10 @@ class NovelFeedController extends ChangeNotifier {
           continue;
         }
         if (complete) break;
+        if (_deferBackgroundPaging) {
+          _backgroundPagingDeferred = true;
+          break;
+        }
         if (!retaining) notifyListeners();
         if (!current()) return;
         requestedPage++;
@@ -557,6 +578,10 @@ class NovelFeedController extends ChangeNotifier {
       if (_disposed || generation != _generation) return;
       error = failure;
       refreshFailed = retaining;
+      if (search && retaining) {
+        _resumeSearchRefresh = true;
+        _updateSearchFailures(pendingFailures);
+      }
     } finally {
       if (!_disposed && generation == _generation) {
         loading = false;
@@ -565,6 +590,21 @@ class NovelFeedController extends ChangeNotifier {
         notifyListeners();
       }
     }
+  }
+
+  void _updateSearchFailures(Map<int, Map<BookSearchField, Object>> pages) {
+    _searchFailuresByPage = Map.unmodifiable(pages);
+    final failures = <BookSearchField, Object>{};
+    for (final failedPage in pages.values) {
+      for (final entry in failedPage.entries) {
+        if (entry.value is OnlineRateLimited || entry.value is OnlineAccessRequired) {
+          failures[entry.key] = entry.value;
+        } else {
+          failures.putIfAbsent(entry.key, () => entry.value);
+        }
+      }
+    }
+    _searchFailures = Map.unmodifiable(failures);
   }
 
   void _cancelSearchGroups() {

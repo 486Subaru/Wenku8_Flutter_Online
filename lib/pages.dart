@@ -159,6 +159,7 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
   final _visitedTabs = <int>{};
   bool _catalogStarted = false;
   bool _catalogNeedsRefresh = false;
+  bool _searchNeedsRefresh = false;
   static final _scrollPlatforms = TargetPlatform.values.toSet();
   late final _tabScrolls = [
     for (var i = 0; i < _dockItems.length; i++)
@@ -337,8 +338,9 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
     // Defer discovery updates while search owns the foreground.
     _catalogNeedsRefresh = _catalogStarted;
     _ensureCatalog();
-    if (_searchOpen && _searchScope == 0 && _searchFeed.query.isNotEmpty) {
-      unawaited(_searchFeed.refresh());
+    if (_searchFeed.query.isNotEmpty) {
+      _searchNeedsRefresh = !_searchOpen || _searchScope != 0;
+      if (!_searchNeedsRefresh) unawaited(_searchFeed.refresh());
     }
   }
 
@@ -423,6 +425,7 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
       widget.state.reduceMotion || MediaQuery.disableAnimationsOf(context);
 
   void _openSearch() {
+    _catalog.deferBackgroundPaging(true);
     _searchFocus.canRequestFocus = true;
     _searchScope = _tab;
     final feed = _activeSearch;
@@ -433,6 +436,10 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
     _searchFocusPending = true;
     if (_searchScope != 0) {
       feed.refresh();
+    } else if (_searchNeedsRefresh) {
+      _searchNeedsRefresh = false;
+      _searchStarted = true;
+      unawaited(_searchFeed.refresh());
     } else if (!_searchStarted ||
         (_searchFeed.page == 0 && !_searchFeed.loading)) {
       _searchStarted = true;
@@ -472,6 +479,8 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
     _dismissSearchKeyboard();
     _searchFocus.canRequestFocus = false;
     _activeSearch.cancelScheduledSearch();
+    final catalogDeferred = _catalog.deferBackgroundPaging(false);
+    _catalogNeedsRefresh = _catalogNeedsRefresh || catalogDeferred;
     setState(() {
       _searchOpen = false;
       _searchCovered = false;

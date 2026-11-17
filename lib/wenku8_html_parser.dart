@@ -61,7 +61,7 @@ abstract final class Wenku8HtmlParser {
   static NovelPage parseBookPage(String source, int page) {
     final document = parse(source);
     final items = parseBookList(source);
-    final reportedLast = _reportedLastPage(document);
+    final reportedLast = _reportedPageStats(document)?.$2;
     final pages = _lastPage(document, reportedLast);
     return NovelPage(
       items: List.unmodifiable(items),
@@ -82,6 +82,10 @@ abstract final class Wenku8HtmlParser {
             (body.contains('error 1015') ||
                 body.contains('you are being rate limited')))) {
       throw OnlineRateLimited('官网 Cloudflare 1015 限流');
+    }
+    final reportedPage = _reportedPageStats(document)?.$1;
+    if (reportedPage != null && reportedPage != page) {
+      throw FormatException('官网返回第 $reportedPage 页，预期第 $page 页，请重试');
     }
     final root = document.querySelector('#content') ??
         document.body ??
@@ -534,11 +538,13 @@ abstract final class Wenku8HtmlParser {
     return int.tryParse(match?.group(1) ?? '');
   }
 
-  static int? _reportedLastPage(Document document) {
+  static (int, int)? _reportedPageStats(Document document) {
     final stats = _oneLine(document.querySelector('#pagestats')?.text ?? '');
-    return int.tryParse(
-      RegExp(r'\d+\s*/\s*(\d+)').firstMatch(stats)?.group(1) ?? '',
-    );
+    final match = RegExp(r'(\d+)\s*/\s*(\d+)').firstMatch(stats);
+    final page = int.tryParse(match?.group(1) ?? '');
+    final total = int.tryParse(match?.group(2) ?? '');
+    if (page == null || total == null || page < 1 || page > total) return null;
+    return (page, total);
   }
 
   static int? _lastPage(Document document, int? reportedLast) {

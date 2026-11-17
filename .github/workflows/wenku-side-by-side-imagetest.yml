@@ -1,8 +1,8 @@
-name: Wenku8 side-by-side image test APK
+name: Build and publish 日轻 preview
 
 on:
   push:
-    branches: ['verify/wenku8-imagetest-apk']
+    branches: ['verify/wenku8-riqing-name-apk']
 
 permissions:
   contents: read
@@ -11,6 +11,8 @@ jobs:
   test-apk:
     runs-on: ubuntu-latest
     timeout-minutes: 32
+    outputs:
+      apk_sha: ${{ steps.build.outputs.apk_sha }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -30,16 +32,18 @@ jobs:
           flutter analyze --no-fatal-infos
           flutter test
       - name: Build ARM64 and emulator APKs
+        id: build
         run: |
           flutter build apk --release --split-per-abi --target-platform android-arm64,android-x64 --no-pub
           apk=build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
           aapt=$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -1)
           "$aapt" dump badging "$apk" > /tmp/wenku-package.txt
-          grep -F "package: name='org.mewx.wenku8_flutter.online.imagetest'" /tmp/wenku-package.txt
-          grep -F "application-label:'日轻插图测试'" /tmp/wenku-package.txt
+          grep -F "package: name='org.mewx.wenku8_flutter.online.riqingpreview'" /tmp/wenku-package.txt
+          grep -Fx "application-label:'日轻'" /tmp/wenku-package.txt
           mkdir -p build/imagetest-delivery
-          cp "$apk" build/imagetest-delivery/riqing-0.5.5-imagetest-arm64.apk
-          sha256sum build/imagetest-delivery/riqing-0.5.5-imagetest-arm64.apk
+          cp "$apk" build/imagetest-delivery/riqing-0.5.5-display-name-arm64.apk
+          sha256sum build/imagetest-delivery/riqing-0.5.5-display-name-arm64.apk
+          echo "apk_sha=$(sha256sum build/imagetest-delivery/riqing-0.5.5-display-name-arm64.apk | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
       - name: Enable KVM
         run: |
           test -e /dev/kvm
@@ -60,6 +64,40 @@ jobs:
       - name: Upload the side-by-side ARM64 installer
         uses: actions/upload-artifact@v4
         with:
-          name: riqing-0.5.5-imagetest-arm64
-          path: build/imagetest-delivery/riqing-0.5.5-imagetest-arm64.apk
+          name: riqing-0.5.5-display-name-arm64
+          path: build/imagetest-delivery/riqing-0.5.5-display-name-arm64.apk
           if-no-files-found: error
+
+  publish:
+    needs: test-apk
+    if: github.repository == '486Subaru/Wenku8_Flutter_Online'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      APK_SHA: ${{ needs.test-apk.outputs.apk_sha }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: riqing-0.5.5-display-name-arm64
+          path: delivery
+      - name: Publish the checked ARM64 package
+        run: |
+          cd delivery
+          printf '%s  %s\n' "$APK_SHA" 'riqing-0.5.5-display-name-arm64.apk' | sha256sum --check
+          mv 'riqing-0.5.5-display-name-arm64.apk' 日轻.apk
+          cat > release-notes.md <<'EOF'
+          此 ARM64 预发布版的安卓桌面和应用列表名称为「日轻」。它基于同一插图和联网修复，采用独立应用标识，可与原有安装并存。
+
+          通过 Flutter 回归测试、安卓原生测试、安装包标签检查以及安卓 14 安装启动验证。
+
+          - [插图修复源码](https://github.com/486Subaru/Wenku8_Flutter_Online/commit/14e34663e8976bc47f88fea918c369714abe2fe1)
+          EOF
+          printf '\n- SHA-256 `%s`\n' "$APK_SHA" >> release-notes.md
+          gh release create riqing-v0.5.5-2286-illustration-test-r2 '日轻.apk#日轻.apk' \
+            --target "$GITHUB_SHA" --prerelease --latest=false \
+            --title '日轻 0.5.5（2286）插图与联网修复测试版 · 日轻应用名' \
+            --notes-file release-notes.md

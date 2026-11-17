@@ -111,7 +111,12 @@ def start():
         raise RuntimeError('App profile tab was not observed')
     entry = require(await_layout(lambda ns: select(ns, '登录文库账号', '登录轻小说文库账号'), 35), 'App Wenku8 login entry was not observed')
     tap(entry)
-    require(await_layout(lambda ns: select(ns, '日轻 · 文库账号登录'), 35), 'Official login WebView was not observed')
+    open_site = require(await_layout(lambda ns: next((n for n in ns if re.search(r'打开.{0,16}文库.{0,4}登录', label(n).replace('\n',' ')) and len(bounds(n))==4),None), 30), 'Official website action was not observed on the account page')
+    tap(open_site)
+    print('STAGE: selected the website login action', flush=True)
+    def webview(ns):
+        return next((n for n in ns if n.get('class') == 'android.webkit.WebView'),None)
+    require(await_layout(webview, 45), 'Official login WebView was not observed')
     print('STAGE: opened app official login screen', flush=True)
     time.sleep(20)
 

@@ -14,18 +14,20 @@ test -n "$version"
 version_name="${version%+*}"
 version_code="${version##*+}"
 mkdir -p build/signed-release
-for abi in arm64-v8a x86_64; do
-  target="build/signed-release/$abi.apk"
-  "$tools" sign --ks "$keystore" --ks-type PKCS12 --ks-key-alias riqing-release \
-    --ks-pass env:RIQING_RELEASE_PASSWORD --key-pass env:RIQING_RELEASE_PASSWORD \
-    --out "$target" "$RUNNER_TEMP/riqing-unsigned/$abi.apk"
-  "$tools" verify --verbose --print-certs "$target" \
-    | grep -F "certificate SHA-256 digest: $expected_fingerprint"
-  "$aapt" dump badging "$target" > "$RUNNER_TEMP/riqing-$abi-badging.txt"
-  grep -E '^package:|^application-label:|^native-code:' "$RUNNER_TEMP/riqing-$abi-badging.txt"
-  grep -F "package: name='org.mewx.wenku8_flutter.online.riqing' versionCode='$version_code' versionName='$version_name'" "$RUNNER_TEMP/riqing-$abi-badging.txt"
-  grep -Fx "application-label:'日轻'" "$RUNNER_TEMP/riqing-$abi-badging.txt"
-  grep -Eq "^native-code: '$abi' *$" "$RUNNER_TEMP/riqing-$abi-badging.txt"
-  rm -f "$target.idsig"
-  sha256sum "$target"
+target="build/signed-release/riqing.apk"
+"$tools" sign --ks "$keystore" --ks-type PKCS12 --ks-key-alias riqing-release \
+  --ks-pass env:RIQING_RELEASE_PASSWORD --key-pass env:RIQING_RELEASE_PASSWORD \
+  --out "$target" build/app/outputs/flutter-apk/app-release.apk
+"$tools" verify --verbose --print-certs "$target" \
+  | grep -F "certificate SHA-256 digest: $expected_fingerprint"
+"$aapt" dump badging "$target" > "$RUNNER_TEMP/riqing-badging.txt"
+grep -E '^package:|^application-label:|^native-code:' "$RUNNER_TEMP/riqing-badging.txt"
+grep -F "package: name='org.mewx.wenku8_flutter.online.riqing' versionCode='$version_code' versionName='$version_name'" "$RUNNER_TEMP/riqing-badging.txt"
+grep -Fx "application-label:'日轻'" "$RUNNER_TEMP/riqing-badging.txt"
+unzip -Z1 "$target" > "$RUNNER_TEMP/riqing-apk-files.txt"
+for abi in armeabi-v7a arm64-v8a x86_64; do
+  grep -Fx "lib/$abi/libflutter.so" "$RUNNER_TEMP/riqing-apk-files.txt"
+  grep -Fx "lib/$abi/libapp.so" "$RUNNER_TEMP/riqing-apk-files.txt"
 done
+rm -f "$target.idsig"
+sha256sum "$target"

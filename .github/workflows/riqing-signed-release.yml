@@ -31,12 +31,7 @@ jobs:
           flutter analyze --no-fatal-infos
           flutter test
       - name: Build release APKs
-        run: |
-          mkdir -p "$RUNNER_TEMP/riqing-unsigned"
-          flutter build apk --release --target-platform android-arm64 --no-pub
-          cp build/app/outputs/flutter-apk/app-release.apk "$RUNNER_TEMP/riqing-unsigned/arm64-v8a.apk"
-          flutter build apk --release --target-platform android-x64 --no-pub
-          cp build/app/outputs/flutter-apk/app-release.apk "$RUNNER_TEMP/riqing-unsigned/x86_64.apk"
+        run: flutter build apk --release --target-platform android-arm,android-arm64,android-x64 --no-pub
       - name: Test Android networking and installation policies
         run: cd android && ./gradlew :app:testDebugUnitTest --no-daemon
       - name: Sign and verify the release APKs
@@ -59,11 +54,11 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           script: bash tool/riqing_release_smoke.sh
-      - name: Upload verified ARM64 package
+      - name: Upload the verified APK
         uses: actions/upload-artifact@v4
         with:
-          name: riqing-signed-arm64
-          path: build/signed-release/arm64-v8a.apk
+          name: riqing-signed-android
+          path: build/signed-release/riqing.apk
           if-no-files-found: error
           retention-days: 14
   draft:
@@ -77,7 +72,7 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
-          name: riqing-signed-arm64
+          name: riqing-signed-android
           path: build/signed-release
       - name: Stage the checked APK as a draft
         env:
@@ -85,6 +80,6 @@ jobs:
         run: |
           version="$(sed -nE 's/^version: ([0-9]+\.[0-9]+\.[0-9]+\+[0-9]+)$/\1/p' pubspec.yaml)"
           test -n "$version"
-          cp build/signed-release/arm64-v8a.apk "$RUNNER_TEMP/日轻.apk"
+          cp build/signed-release/riqing.apk "$RUNNER_TEMP/日轻.apk"
           gh release create "v$version" --draft --target "$GITHUB_SHA" \
             --title "日轻 $version" --notes-file tool/riqing_release_notes.md "$RUNNER_TEMP/日轻.apk#日轻.apk"

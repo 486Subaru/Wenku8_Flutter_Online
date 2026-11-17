@@ -77,6 +77,8 @@ class NovelFeedController extends ChangeNotifier {
   int page = 0;
   int? totalItems;
   Map<BookSearchField, Object> _searchFailures = const {};
+  Map<int, Map<BookSearchField, Object>> _searchFailuresByPage = const {};
+  BookSearchSession _searchSession = BookSearchSession();
   Set<BookSearchField> get incompleteSearchFields =>
       Set.unmodifiable(_searchFailures.keys);
 
@@ -222,9 +224,14 @@ class NovelFeedController extends ChangeNotifier {
     await _load(replace: false);
   }
 
-  Future<void> retry() => loading
-      ? Future.value()
-      : _load(replace: page == 0 || refreshFailed, force: true);
+  Future<void> retry() {
+    if (loading) return Future.value();
+    if (search && _searchFailuresByPage.isNotEmpty) {
+      final pages = _searchFailuresByPage.keys.toList()..sort();
+      return _load(replace: false, force: true, retryPages: pages);
+    }
+    return _load(replace: page == 0 || refreshFailed, force: true);
+  }
 
   Future<void> selectSort(NovelSort value) async {
     if (sort == value && tags.isEmpty && _publication == null) return;
@@ -345,6 +352,8 @@ class NovelFeedController extends ChangeNotifier {
     page = 0;
     totalItems = null;
     _searchFailures = const {};
+    _searchFailuresByPage = const {};
+    _searchSession = BookSearchSession();
     _tagProgress = null;
     hasMore = true;
     error = null;
@@ -353,7 +362,11 @@ class NovelFeedController extends ChangeNotifier {
     refreshing = false;
   }
 
-  Future<void> _load({required bool replace, bool force = false}) async {
+  Future<void> _load({
+    required bool replace,
+    bool force = false,
+    List<int> retryPages = const [],
+  }) async {
     if (_disposed) return;
     if (!replace && loading) return;
     if (_usesSearchGroups) {
@@ -361,7 +374,10 @@ class NovelFeedController extends ChangeNotifier {
       return;
     }
     final generation = replace ? ++_generation : _generation;
-    var requestedPage = replace ? 1 : page + 1;
+    if (replace) _searchSession = BookSearchSession();
+    final session = _searchSession;
+    var retryIndex = 0;
+    var requestedPage = retryPages.firstOrNull ?? (replace ? 1 : page + 1);
     var replacing = replace;
     final requestedSort = sort;
     final requestedPublication = _publication;
@@ -373,8 +389,8 @@ class NovelFeedController extends ChangeNotifier {
     final retainedCount = _items.length;
     final retainedPage = page;
     var pending = replace ? <Novel>[] : _items;
-    final pendingFailures = <BookSearchField, Object>{
-      if (!replace) ..._searchFailures,
+    final pendingFailures = <int, Map<BookSearchField, Object>>{
+      if (!replace) ..._searchFailuresByPage,
     };
     loading = true;
     _tagProgress = null;
@@ -447,6 +463,7 @@ class NovelFeedController extends ChangeNotifier {
                 refresh: force,
                 current: current,
                 onProgress: acceptItems,
+                session: session,
               )
             : search || filteringTags
             ? await repository.searchFilteredPage(
@@ -464,12 +481,10 @@ class NovelFeedController extends ChangeNotifier {
         if (result.page != requestedPage) {
           throw const FormatException('分页游标不匹配');
         }
-        for (final entry in result.searchFailures.entries) {
-          if (entry.value is OnlineRateLimited || entry.value is OnlineAccessRequired) {
-            pendingFailures[entry.key] = entry.value;
-          } else {
-            pendingFailures.putIfAbsent(entry.key, () => entry.value);
-          }
+        if (result.searchFailures.isEmpty) {
+          pendingFailures.remove(requestedPage);
+        } else {
+          pendingFailures[requestedPage] = result.searchFailures;
         }
         final oldCount = pending.length;
         final merged = <int, Novel>{
@@ -508,10 +523,30 @@ class NovelFeedController extends ChangeNotifier {
             _resultReplacesRetained = retaining;
             _resultRevision++;
           }
-          page = requestedPage;
-          hasMore = result.hasMore;
-          totalItems = result.totalItems;
-          _searchFailures = Map.unmodifiable(pendingFailures);
+          if (retryPages.isEmpty || requestedPage >= page) {
+            page = requestedPage;
+            hasMore = result.hasMore;
+            totalItems = result.totalItems;
+          }
+          _searchFailuresByPage = Map.unmodifiable(pendingFailures);
+          final failures = <BookSearchField, Object>{};
+          for (final failedPage in pendingFailures.values) {
+            for (final entry in failedPage.entries) {
+              if (entry.value is OnlineRateLimited || entry.value is OnlineAccessRequired) {
+                failures[entry.key] = entry.value;
+              } else {
+                failures.putIfAbsent(entry.key, () => entry.value);
+              }
+            }
+          }
+          _searchFailures = Map.unmodifiable(failures);
+        }
+        if (retryPages.isNotEmpty) {
+          if (result.searchFailures.isNotEmpty || ++retryIndex == retryPages.length) {
+            break;
+          }
+          requestedPage = retryPages[retryIndex];
+          continue;
         }
         if (complete) break;
         if (!retaining) notifyListeners();
@@ -551,7 +586,9 @@ class NovelFeedController extends ChangeNotifier {
     final work = [
       for (final group in groups)
         if (!replace && force)
-          group.error != null ? group.retry() : Future<void>.value()
+          group.error != null || group.searchNotice != null
+              ? group.retry()
+              : Future<void>.value()
         else if (!replace)
           group.loadMore()
         else if (force && group.query == query)

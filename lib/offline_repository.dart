@@ -170,6 +170,7 @@ class OfflineNovelRepository extends FrameChangeNotifier
     bool refresh = false,
     bool Function()? current,
     void Function(List<Novel>)? onProgress,
+    BookSearchSession? session,
   }) async {
     if (!offline) {
       if (remote case final ProgressiveBookSearch progressive) {
@@ -180,6 +181,7 @@ class OfflineNovelRepository extends FrameChangeNotifier
           refresh: refresh,
           current: current,
           onProgress: onProgress,
+          session: session,
         );
       }
       return remote.searchFilteredPage(

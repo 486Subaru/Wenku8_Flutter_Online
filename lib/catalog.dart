@@ -380,6 +380,37 @@ abstract class NovelRepository {
   }
 }
 
+/// Successful partitions of one search, kept only for its active feed.
+final class BookSearchSession {
+  final _pages = <(Object, int), NovelPage>{};
+  final _lastPages = <Object, int>{};
+
+  NovelPage? completed(Object scope, int page) {
+    final last = _lastPages[scope];
+    if (last != null && page > last) {
+      return NovelPage(items: const [], page: page, totalPages: last);
+    }
+    return _pages[(scope, page)];
+  }
+
+  Future<NovelPage> resolve(
+    Object scope,
+    int page,
+    Future<NovelPage> Function() request,
+  ) async {
+    final existing = completed(scope, page);
+    if (existing != null) return existing;
+    final result = await request();
+    if (result.searchFailures.isEmpty && result.page == page) {
+      _pages[(scope, page)] = result;
+      if (result.searchEndConfirmed && result.totalPages != null) {
+        _lastPages[scope] = result.totalPages!;
+      }
+    }
+    return result;
+  }
+}
+
 /// A repository may surface some matches while its remaining sources or
 /// search fields are still running. The completed page owns the final cursor.
 abstract interface class ProgressiveBookSearch {
@@ -390,6 +421,7 @@ abstract interface class ProgressiveBookSearch {
     bool refresh = false,
     bool Function()? current,
     void Function(List<Novel>)? onProgress,
+    BookSearchSession? session,
   });
 }
 
@@ -426,6 +458,7 @@ class NovelPage {
     this.totalPages,
     this.totalItems,
     this.searchFailures = const {},
+    this.searchEndConfirmed = false,
   });
   final List<Novel> items;
   final int page;
@@ -436,6 +469,10 @@ class NovelPage {
   /// Callers may complete these fields through another source; presentation
   /// exposes the missing scope, never the underlying response or exception.
   final Map<BookSearchField, Object> searchFailures;
+
+  /// The source explicitly reports the last page for this search partition.
+  final bool searchEndConfirmed;
+
   bool get hasMore =>
       totalPages == null ? items.isNotEmpty : page < totalPages!;
 

@@ -61,11 +61,13 @@ abstract final class Wenku8HtmlParser {
   static NovelPage parseBookPage(String source, int page) {
     final document = parse(source);
     final items = parseBookList(source);
-    final pages = _lastPage(document);
+    final reportedLast = _reportedLastPage(document);
+    final pages = _lastPage(document, reportedLast);
     return NovelPage(
       items: List.unmodifiable(items),
       page: page,
       totalPages: pages,
+      searchEndConfirmed: reportedLast != null && reportedLast == pages,
     );
   }
 
@@ -103,7 +105,9 @@ abstract final class Wenku8HtmlParser {
       if (ids.length == 1) {
         final detail = parseBookDetail(source, ids.single);
         if (detail != null && detail.book.author.isNotEmpty) {
-          return NovelPage(items: [detail.book], page: page, totalPages: 1);
+          return NovelPage(
+            items: [detail.book], page: page, totalPages: 1, searchEndConfirmed: true,
+          );
         }
       }
     }
@@ -113,7 +117,9 @@ abstract final class Wenku8HtmlParser {
       r'没有找到|未找到|找不到|没有搜索到|没有符合|无符合|没有相关|未搜索到|搜索结果[：:\s]*0|共\s*0\s*(?:条|部|本)',
     ).hasMatch(text);
     if (explicitEmpty) {
-      return NovelPage(items: const [], page: page, totalPages: page);
+      return NovelPage(
+        items: const [], page: page, totalPages: page, searchEndConfirmed: true,
+      );
     }
     throw const FormatException('文库返回了无法识别的搜索页面，请检查官网搜索是否可用');
   }
@@ -528,10 +534,15 @@ abstract final class Wenku8HtmlParser {
     return int.tryParse(match?.group(1) ?? '');
   }
 
-  static int? _lastPage(Document document) {
+  static int? _reportedLastPage(Document document) {
     final stats = _oneLine(document.querySelector('#pagestats')?.text ?? '');
-    final counted = int.tryParse(RegExp(r'\d+\s*/\s*(\d+)').firstMatch(stats)?.group(1) ?? '');
-    var last = counted ?? 0;
+    return int.tryParse(
+      RegExp(r'\d+\s*/\s*(\d+)').firstMatch(stats)?.group(1) ?? '',
+    );
+  }
+
+  static int? _lastPage(Document document, int? reportedLast) {
+    var last = reportedLast ?? 0;
     for (final anchor in document.querySelectorAll('a[href]')) {
       final href = anchor.attributes['href'] ?? '';
       final uri = _resolvePage(href);

@@ -205,6 +205,7 @@ class LegacyWenkuRepository extends NovelRepository
     bool refresh = false,
     bool Function()? current,
     void Function(List<Novel>)? onProgress,
+    BookSearchSession? session,
   }) async {
     final term = query.trim();
     if (term.isEmpty) {
@@ -239,6 +240,7 @@ class LegacyWenkuRepository extends NovelRepository
             page: page,
             current: current,
             onTitle: onProgress,
+            session: session,
           )
         : Future.value(NovelPage(items: const [], page: page, totalPages: page));
     final customFuture = _searchCustomSources(
@@ -246,6 +248,7 @@ class LegacyWenkuRepository extends NovelRepository
       field: field,
       page: page,
       current: current,
+      session: session,
     );
     NovelPage primary;
     try {
@@ -282,7 +285,7 @@ class LegacyWenkuRepository extends NovelRepository
     return NovelPage(
       items: List.unmodifiable(merged.values),
       page: page,
-      totalPages: customHasMore ? null : primary.totalPages ?? page,
+      totalPages: customHasMore ? null : primary.totalPages,
       totalItems: null,
       searchFailures: failures,
     );
@@ -293,17 +296,22 @@ class LegacyWenkuRepository extends NovelRepository
     required BookSearchField field,
     required int page,
     bool Function()? current,
+    BookSearchSession? session,
   }) async {
     final sources = bookSources?.enabledSources ?? const <BookSourceConfig>[];
     if (sources.isEmpty) return const [];
     const concurrency = 3;
+    Future<NovelPage> searchSource(BookSourceConfig source) {
+      Future<NovelPage> request() => _searchOneCustomSource(source, term, field, page);
+      return session?.resolve((source.id, term, field), page, request) ?? request();
+    }
     final results = <NovelPage>[];
     for (var offset = 0; offset < sources.length; offset += concurrency) {
       if (current?.call() == false) break;
       final batch = sources.skip(offset).take(concurrency);
       results.addAll(await Future.wait([
         for (final source in batch)
-          _searchOneCustomSource(source, term, field, page),
+          searchSource(source),
       ]));
     }
     return results;
@@ -356,6 +364,7 @@ class LegacyWenkuRepository extends NovelRepository
     required int page,
     bool Function()? current,
     void Function(List<Novel>)? onTitle,
+    BookSearchSession? session,
   }) async {
     if (field == BookSearchField.id) {
       final id = int.tryParse(term);
@@ -378,11 +387,16 @@ class LegacyWenkuRepository extends NovelRepository
       );
     }
 
+    Future<NovelPage> official(BookSearchField scope, String name) {
+      Future<NovelPage> request() => _searchPage(term, name, page);
+      return session?.resolve((term, scope), page, request) ?? request();
+    }
+
     if (field == BookSearchField.title) {
-      return _searchPage(term, 'articlename', page);
+      return official(field, 'articlename');
     }
     if (field == BookSearchField.author) {
-      return _searchPage(term, 'author', page);
+      return official(field, 'author');
     }
     if (field == BookSearchField.tags) {
       final source = await _searchPage(term, 'articlename', page);
@@ -405,7 +419,7 @@ class LegacyWenkuRepository extends NovelRepository
     // A failure in one official search field must preserve the other field.
     Future<NovelPage> independent(BookSearchField scope, String name) async {
       try {
-        return await _searchPage(term, name, page);
+        return await official(scope, name);
       } catch (error) {
         return NovelPage(
           items: const [], page: page, totalPages: page,
@@ -424,14 +438,16 @@ class LegacyWenkuRepository extends NovelRepository
       OnlineAccessRequired error => error,
       _ => null,
     };
-    final byAuthor = terminalFailure != null
-        ? NovelPage(
-            items: const [],
-            page: page,
-            totalPages: page,
-            searchFailures: {BookSearchField.author: terminalFailure},
-          )
-        : await independent(BookSearchField.author, 'author');
+    final completedAuthor = session?.completed((term, BookSearchField.author), page);
+    final byAuthor = completedAuthor ??
+        (terminalFailure != null
+            ? NovelPage(
+                items: const [],
+                page: page,
+                totalPages: page,
+                searchFailures: {BookSearchField.author: terminalFailure},
+              )
+            : await independent(BookSearchField.author, 'author'));
     final unique = <int, Novel>{
       for (final book in byTitle.items) book.id: book,
       for (final book in byAuthor.items) book.id: book,
@@ -440,8 +456,10 @@ class LegacyWenkuRepository extends NovelRepository
     return NovelPage(
       items: List.unmodifiable(items),
       page: page,
-      totalPages: _maxPages(byTitle.totalPages, byAuthor.totalPages) ??
-          (items.isNotEmpty ? null : page),
+      totalPages: (byTitle.totalPages == null && byTitle.hasMore) ||
+              (byAuthor.totalPages == null && byAuthor.hasMore)
+          ? null
+          : _maxPages(byTitle.totalPages, byAuthor.totalPages) ?? page,
       totalItems: null,
       searchFailures: {...byTitle.searchFailures, ...byAuthor.searchFailures},
     );

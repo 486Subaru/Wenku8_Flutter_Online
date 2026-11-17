@@ -1,0 +1,26 @@
+name: Stop 日轻 name preview run
+
+on:
+  push:
+    branches: ['verify/wenku8-imagetest-release']
+    paths: ['.github/workflows/cancel-wenku8-name-preview.yml']
+
+permissions:
+  actions: write
+
+jobs:
+  cancel:
+    if: github.repository == '486Subaru/Wenku8_Flutter_Online'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Cancel build and publication
+        run: |
+          if [ "$(gh run view 44075845458 --json status --jq .status)" = completed ]; then
+            gh run view 44075845458 --json status,conclusion
+          else
+            gh api --method POST "repos/$GH_REPO/actions/runs/44075845458/force-cancel"
+          fi

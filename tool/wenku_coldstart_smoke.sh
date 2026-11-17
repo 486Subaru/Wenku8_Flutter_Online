@@ -80,6 +80,7 @@ if grep -E "$official" "$traffic"; then
   exit 1
 fi
 read -r action x y <<< "$coordinate"
+adb logcat -c
 adb shell input tap "$x" "$y"
 for attempt in $(seq 1 15); do
   if grep -m1 -E "connected (${page_official#^})" "$traffic"; then
@@ -87,13 +88,19 @@ for attempt in $(seq 1 15); do
     sleep 25
     adb shell uiautomator dump /sdcard/wenku-startup.xml
     adb exec-out cat /sdcard/wenku-startup.xml > "$diagnostics/result.xml"
-    python3 - "$diagnostics/result.xml" <<'PY'
+    adb logcat -d -b crash > "$diagnostics/crash.log"
+    adb logcat -d -s ActivityManager:I ActivityTaskManager:I AndroidRuntime:E flutter:E > "$diagnostics/runtime.log"
+    adb shell dumpsys activity activities > "$diagnostics/activities.log"
+    python3 - "$diagnostics/result.xml" "$package" <<'PY'
 import sys
 import xml.etree.ElementTree as ET
 
+nodes = list(ET.parse(sys.argv[1]).iter('node'))
+if not any(node.get('package') == sys.argv[2] for node in nodes):
+    raise SystemExit('The Android app was no longer visible after the discovery tap.')
 labels = [
     node.get('text', '') + node.get('content-desc', '')
-    for node in ET.parse(sys.argv[1]).iter('node')
+    for node in nodes
 ]
 for label in labels:
     if any(text in label for text in ('1015', '需要完成官网验证', '需要连接文库账号', '书籍加载失败')):

@@ -38,6 +38,7 @@ import 'book_grid_density.dart';
 import 'book_categories.dart';
 import 'bookshelf_scope.dart';
 import 'book_source_badge.dart';
+import 'book_source_settings_page.dart';
 import 'book_search.dart';
 import 'blocked_tags_controls.dart';
 import 'catalog.dart';
@@ -72,6 +73,7 @@ import 'native_effects.dart' show NativeGlassGroup;
 import 'lan_handoff_widgets.dart';
 import 'network_status.dart';
 import 'novel_feed_controller.dart';
+import 'online_component.dart';
 import 'offline_repository.dart';
 import 'offline_widgets.dart';
 import 'low_performance_page.dart';
@@ -1091,6 +1093,23 @@ class DiscoverPage extends StatelessWidget {
         ),
       );
     } else if (books.isEmpty && featuredCount == 0 && feed?.error != null) {
+      final failure = feed?.error;
+      final needsLogin = failure is OnlineAuthenticationRequired ||
+          failure is OnlineChallengeRequired;
+      final features = WenkuFeaturesScope.maybeOf(context);
+      final loginAction = needsLogin && features != null
+          ? () => unawaited(
+              pushNovelPage<void>(
+                context,
+                WenkuAccountPage(
+                  account: features.account,
+                  state: state,
+                  repository: repository,
+                ),
+                reduceMotion: state.reduceMotion,
+              ),
+            )
+          : null;
       body = Column(
         children: [
           Padding(
@@ -1107,25 +1126,30 @@ class DiscoverPage extends StatelessWidget {
           Expanded(
             child: ContentNotice(
               icon: CupertinoIcons.wifi_exclamationmark,
-              title: '书籍加载失败',
+              title: needsLogin
+                  ? failure is OnlineChallengeRequired
+                      ? '需要完成官网验证'
+                      : '需要连接文库账号'
+                  : '书籍加载失败',
               message: feed!.failureMessage,
-              onRetry: feed!.retry,
+              actionLabel: loginAction != null ? '登录 / 官网验证' : '重试',
+              onRetry: loginAction ?? feed!.retry,
               secondaryAction: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   ?returnToLatest,
-                  if (feed?.publication != null &&
-                      WenkuFeaturesScope.maybeOf(context) != null)
+                  if (feed?.publication != null && features != null)
                     GlassTextButton(
-                      onPressed: () => pushNovelPage<void>(
-                        context,
-                        WenkuAccountPage(
-                          account: WenkuFeaturesScope.maybeOf(context)!.account,
-                          state: state,
-                          repository: repository,
-                        ),
-                        reduceMotion: state.reduceMotion,
-                      ),
+                      onPressed: loginAction ??
+                          () => pushNovelPage<void>(
+                            context,
+                            WenkuAccountPage(
+                              account: features.account,
+                              state: state,
+                              repository: repository,
+                            ),
+                            reduceMotion: state.reduceMotion,
+                          ),
                       child: const AppText('查看账号连接'),
                     ),
                 ],
@@ -1821,11 +1845,11 @@ class NovelRow extends StatelessWidget {
                   heroTag: coverHeroTag,
                 ),
               ),
-              if (sourceLabel != null)
+              if (sourceLabel != null || novel.sourceName != null)
                 Positioned(
                   top: 3,
                   right: 3,
-                  child: BookSourceBadge(sourceLabel!),
+                  child: BookSourceBadge(sourceLabel ?? novel.sourceName!),
                 ),
             ],
           ),
@@ -3072,6 +3096,19 @@ class SettingsPage extends StatelessWidget {
             options: _effectsOptions,
           ),
           const SizedBox(height: 14),
+          FeatureEntry(
+            key: const ValueKey('settings-book-sources'),
+            title: '书源管理',
+            subtitle: '添加其他网站，配置搜索、详情、目录与正文规则',
+            icon: CupertinoIcons.globe,
+            onTap: () => pushNovelPage<void>(
+              context,
+              BookSourceSettingsPage(reduceMotion: state.reduceMotion),
+              reduceMotion: state.reduceMotion,
+              slot: ('settings', 'book-sources'),
+            ),
+          ),
+          const SizedBox(height: 14),
           if (LanSyncScope.maybeOf(context) case final sync?) ...[
             FeatureEntry(
               key: const ValueKey('settings-lan-sync'),
@@ -3922,6 +3959,23 @@ class InlineSearchResults extends StatelessWidget {
 
   Widget _buildResults(BuildContext context) {
     final books = feed.items;
+    final failure = feed.error;
+    final needsLogin = failure is OnlineAuthenticationRequired ||
+        failure is OnlineChallengeRequired;
+    final features = WenkuFeaturesScope.maybeOf(context);
+    final VoidCallback? loginAction = features == null
+        ? null
+        : () => unawaited(
+            pushNovelPage<void>(
+              context,
+              WenkuAccountPage(
+                account: features.account,
+                state: state,
+                repository: repository,
+              ),
+              reduceMotion: state.reduceMotion,
+            ),
+          );
     if (books.isEmpty &&
         feed.query.isEmpty &&
         onRecall != null &&
@@ -3943,14 +3997,22 @@ class InlineSearchResults extends StatelessWidget {
           else if (feed.error != null)
             Column(
               children: [
-                const AppText('推荐载入失败，仍可搜索书名或作者'),
+                AppText(
+                  needsLogin
+                      ? '登录文库账号并完成官网验证后即可加载推荐'
+                      : '推荐载入失败，仍可搜索书名或作者',
+                ),
                 GlassTextButton(
-                  onPressed: feed.retry,
-                  child: const AppText('重试'),
+                  onPressed: needsLogin && loginAction != null
+                      ? loginAction
+                      : feed.retry,
+                  child: AppText(needsLogin && loginAction != null
+                      ? '登录 / 官网验证'
+                      : '重试'),
                 ),
               ],
             )
-          else
+      else
             const AppText('搜索书名或作者，开始寻找故事。'),
         ],
       );
@@ -3961,9 +4023,16 @@ class InlineSearchResults extends StatelessWidget {
     if (books.isEmpty && feed.error != null) {
       return ContentNotice(
         icon: CupertinoIcons.wifi_exclamationmark,
-        title: '搜索失败，请稍后重试',
+        title: needsLogin
+            ? failure is OnlineChallengeRequired
+                ? '需要完成官网验证'
+                : '需要连接文库账号'
+            : '搜索失败，请稍后重试',
         message: feed.failureMessage,
-        onRetry: feed.retry,
+        actionLabel: needsLogin && loginAction != null
+            ? '登录 / 官网验证'
+            : '重试',
+        onRetry: needsLogin && loginAction != null ? loginAction : feed.retry,
       );
     }
     if (books.isEmpty) {

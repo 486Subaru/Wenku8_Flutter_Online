@@ -19,6 +19,7 @@ internal fun attachWenkuEnginePlugins(engine: FlutterEngine) {
     if (!engine.plugins.has(LanReadingConfigPlugin::class.java)) engine.plugins.add(LanReadingConfigPlugin())
     if (!engine.plugins.has(LanDiscoveryPlugin::class.java)) engine.plugins.add(LanDiscoveryPlugin())
     if (!engine.plugins.has(WenkuHostPlugin::class.java)) engine.plugins.add(WenkuHostPlugin())
+    if (!engine.plugins.has(Wenku8OfficialWebPlugin::class.java)) engine.plugins.add(Wenku8OfficialWebPlugin())
     if (!engine.plugins.has(SystemSpeechPlugin::class.java)) engine.plugins.add(SystemSpeechPlugin())
     if (!engine.plugins.has(AppUpdatePlugin::class.java)) engine.plugins.add(AppUpdatePlugin())
     if (!engine.plugins.has(CustomSpeechConfigPlugin::class.java)) engine.plugins.add(CustomSpeechConfigPlugin())

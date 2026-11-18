@@ -18,6 +18,11 @@ class Novel {
     this.lastUpdate,
     this.chapterCount = 0,
     this.navigation,
+    this.sourceId,
+    this.sourceName,
+    this.sourceUrl,
+    this.sourceBaseUrl,
+    this.sourceImageHosts = const [],
   });
 
   final int id;
@@ -32,6 +37,11 @@ class Novel {
   final String? lastUpdate;
   final int chapterCount;
   final BookNavigation? navigation;
+  final String? sourceId;
+  final String? sourceName;
+  final String? sourceUrl;
+  final String? sourceBaseUrl;
+  final List<String> sourceImageHosts;
 
   /// Public directory rows can target any preserved reading section. A resource
   /// missing from the authored TOC remains reachable by normal page turns.
@@ -82,6 +92,8 @@ class Novel {
           id: entry.target.chapterId,
           volumeId: volumeId,
           volumeTitle: volumeTitle,
+          sourceId: chapter.sourceId,
+          sourceUrl: chapter.sourceUrl,
         ),
       );
     }
@@ -155,6 +167,11 @@ class Novel {
     lastUpdate: lastUpdate,
     chapterCount: chapterCount,
     navigation: navigation,
+    sourceId: sourceId,
+    sourceName: sourceName,
+    sourceUrl: sourceUrl,
+    sourceBaseUrl: sourceBaseUrl,
+    sourceImageHosts: sourceImageHosts,
   );
 
   Novel withChapters(List<NovelChapter> items) => Novel(
@@ -170,6 +187,11 @@ class Novel {
     lastUpdate: lastUpdate,
     chapterCount: items.length,
     navigation: navigation,
+    sourceId: sourceId,
+    sourceName: sourceName,
+    sourceUrl: sourceUrl,
+    sourceBaseUrl: sourceBaseUrl,
+    sourceImageHosts: sourceImageHosts,
   );
 
   Map<String, Object?> toSnapshot() => {
@@ -184,6 +206,11 @@ class Novel {
     'lastUpdate': lastUpdate,
     'chapterCount': chapters.isNotEmpty ? chapters.length : chapterCount,
     if (navigation != null) 'navigation': navigation!.toJson(),
+    if (sourceId != null) 'sourceId': sourceId,
+    if (sourceName != null) 'sourceName': sourceName,
+    if (sourceUrl != null) 'sourceUrl': sourceUrl,
+    if (sourceBaseUrl != null) 'sourceBaseUrl': sourceBaseUrl,
+    if (sourceImageHosts.isNotEmpty) 'sourceImageHosts': sourceImageHosts,
   };
 
   factory Novel.fromSnapshot(Map<String, dynamic> value) {
@@ -212,6 +239,13 @@ class Novel {
       navigation: value['navigation'] == null
           ? null
           : BookNavigation.fromJson(value['navigation']),
+      sourceId: value['sourceId'] is String ? value['sourceId'] : null,
+      sourceName: value['sourceName'] is String ? value['sourceName'] : null,
+      sourceUrl: value['sourceUrl'] is String ? value['sourceUrl'] : null,
+      sourceBaseUrl: value['sourceBaseUrl'] is String ? value['sourceBaseUrl'] : null,
+      sourceImageHosts: value['sourceImageHosts'] is List
+          ? (value['sourceImageHosts'] as List).whereType<String>().take(12).toList()
+          : const [],
     );
   }
 }
@@ -235,6 +269,8 @@ class NovelChapter {
     this.id = 0,
     this.volumeId = 0,
     this.volumeTitle = '',
+    this.sourceId,
+    this.sourceUrl,
   });
 
   final String title;
@@ -242,6 +278,8 @@ class NovelChapter {
   final int id;
   final int volumeId;
   final String volumeTitle;
+  final String? sourceId;
+  final String? sourceUrl;
 }
 
 /// Contiguous volume ranges keep the original, flat chapter indices stable.

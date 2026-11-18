@@ -1,7 +1,7 @@
-/// Public presentation code depends on domain models, not a service protocol.
+/// Exceptions at the boundary between the reader and the official website.
 class OnlineComponentUnavailable implements Exception {
   const OnlineComponentUnavailable();
-  static const message = '此源码构建未包含在线组件，可继续使用本地导入与阅读';
+  static const message = '当前平台尚未接入官方网页连接，可继续使用本地导入与阅读';
   @override
   String toString() => message;
 }
@@ -9,7 +9,13 @@ class OnlineComponentUnavailable implements Exception {
 class OnlineAuthenticationRequired implements Exception {
   const OnlineAuthenticationRequired();
   @override
-  String toString() => '请先登录账号';
+  String toString() => '请先登录轻小说文库账号';
+}
+
+class OnlineChallengeRequired implements Exception {
+  const OnlineChallengeRequired();
+  @override
+  String toString() => '官网要求浏览器验证，请先完成官方网页登录验证后重试';
 }
 
 Future<T> unavailableOnline<T>() =>
